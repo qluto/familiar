@@ -25,7 +25,7 @@ Linear にすでに issue があるものは提案しない。
 
 ## 出力
 - coverage: 確認した情報源ごとに ok / partial / failed と、読めなかった範囲を書く（「何もなかった」と「読めなかった」を区別するため）
-- dedupe_key: 出典の恒久的な URL または ID から作る
+- sources.url: 出典の恒久的な URL。重複判定に使うので、スレッドやページそのものを指す URL にする
 - title、why、linear_draft は日本語で書く
 - sources.excerpt は根拠の短い抜粋（200 字以内）
 - 不明な team / due は null

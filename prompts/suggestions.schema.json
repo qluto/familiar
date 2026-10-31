@@ -47,7 +47,6 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "dedupe_key",
           "title",
           "why",
           "sources",
@@ -58,9 +57,6 @@
           "confidence"
         ],
         "properties": {
-          "dedupe_key": {
-            "type": "string"
-          },
           "title": {
             "type": "string"
           },

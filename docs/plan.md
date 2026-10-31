@@ -51,11 +51,12 @@ claude -p "<prompts/scan.md + 前回以降の範囲 + 未処理・却下済み�
 - `dedupe_key` はモデルに作らせず、steward が出典 URL から正規化する
 - 出力: `coverage[]` = `{source, status(ok|partial|failed), note}` と `suggestions[]` = `{dedupe_key, title, why, sources[{kind, url, excerpt}], urgency, effort, kind(code|reply|meeting_prep|follow_up|other), linear_draft{team, title, description, due}, confidence}`
 - 重複を除く: `dedupe_key`（出典 URL ベース）と Linear の既存 issue 検索で、出したことがあるもの・すでに issue 化されたものを除く
-- 2 段構え: Haiku で動きの有無と候補を見て、候補があれば Sonnet で本文を読み下書きを作る。Sonnet だけだと 6 情報源で 1 日約 $5.5 相当になるため（S2）。候補の取りこぼしは P2 で確認する
+- 2 段構え（P2 で実装）: Haiku で動きの有無と候補を見て、候補があれば Sonnet で本文を読み下書きを作る。Sonnet だけだと 6 情報源で 1 日約 $5.5 相当になるため（S2）。候補の取りこぼしは P2 で確認する
 
 ### 3.2 採用時の書き込み（別プロセス・書き込み専用）
-- 採用した提案の **確定済みの値** だけを渡し、`Linear の issue 作成ツール` だけを許可した `claude -p` で作る
-  （もしくは Linear API を直接叩く。コネクタで足りるかは S1 で決める）
+- 採用した提案の **確定済みの値** だけを渡し、`mcp__claude_ai_Linear__save_issue` だけを許可した `claude -p` で作る
+- `save_issue` は `id` を渡すと既存 issue を更新するので、steward が実行中のイベントを見て、確定値と完全一致する 1 回だけを通す。
+  不一致なら停止するが、検知と実行は並行するため事前遮断ではない（値は人が確認済みという前提で許容する）
 - **見回り役は書き込みツールを一切持たない。** メールや Slack に仕込まれた指示（プロンプトインジェクション）が
   影響できるのは提案の文面までで、人が見てからでないと外部に何も書かれない
 
@@ -90,7 +91,6 @@ S1〜S3 は完了、S4 は未着手。結果は [`spike-results.md`](spike-resul
 | P5 | 好みの学習（採用・却下の理由を memory に要約）、「herdr で着手」 | 却下が減る |
 
 ## 6. 決めていないこと
-- steward の実装言語: **Swift を推す**（herdr-notify と同じく依存なしの単体バイナリ、launchd で実績あり）。代案は Rust（Tauri と共有できる）
 - 見回りの間隔と時間帯の既定値（仮: 平日 9–20 時、30 分）
 - Linear の既定チーム・ラベル（例: `from:steward`）・優先度の付け方
 - 却下した提案を何日覚えておくか
