@@ -1,12 +1,13 @@
-// 状態遷移の検査。クリックを任意の時点（クリップ再生中を含む）で入れて長時間シミュレーションする。
+// 状態遷移の検査。引数でパックのディレクトリを渡すと、そのパックも検査する。クリックを任意の時点（クリップ再生中を含む）で入れて長時間シミュレーションする。
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import "./web/brain.js";
 const { Brain, GRAPH, HOLD, BLINK, ACT } = globalThis.Brain;
-const meta = JSON.parse(fs.readFileSync(new URL("./web/clips/clips.json", import.meta.url)));
+const pack = process.argv[2] ?? new URL("./web/packs/default", import.meta.url).pathname;
+const meta = JSON.parse(fs.readFileSync(`${pack}/clips/clips.json`));
 execFileSync("node", ["--check", new URL("./web/main.js", import.meta.url).pathname]); // 構文エラーはログも出ず無言で止まる
 const fail = (m) => { console.error("NG", m); process.exitCode = 1; };
-for (const c of Object.keys(GRAPH)) if (!meta[c]) fail("素材なし " + c);
+for (const c of Object.keys(GRAPH)) if (!meta[c] || !fs.existsSync(`${pack}/clips/${c}.mp4`)) fail("素材なし " + c);
 for (const c of Object.keys(meta)) if (!GRAPH[c]) fail("遷移に未登録 " + c);
 const hubs = [...new Set(Object.values(GRAPH).flat())];
 for (const h of hubs) {

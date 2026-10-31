@@ -61,7 +61,7 @@ claude -p "<prompts/scan.md + 前回以降の範囲 + 未処理・却下済み�
   影響できるのは提案の文面までで、人が見てからでないと外部に何も書かれない
 
 ### 3.3 マスコット（app/）
-- clip-mascot の `app/` を取り込んだ。素材の生成ツールは animation-studio 側に残す
+- 描画は clip-mascot の方式を使う。キャラクターはパックとして差し替える（`character-pack.md`）。リポジトリにはデフォルトだけを置く
 - **T / I / Q は familiar の合図専用。** 自発動作から外し、提案がないのに閃いて見えないようにする
 
 | 状況 | 動作 |
@@ -82,7 +82,7 @@ claude -p "<prompts/scan.md + 前回以降の範囲 + 未処理・却下済み�
 - 提案の文面は信頼できないデータなので `textContent` でのみ表示し、外部リンクは https だけ開く
 
 ### 配布
-- 名前とアイコンは特定のキャラクターに依存させない。将来はキャラクターを差し替えられるようにし、人間以外も選べるようにする。アイコンの原本は `app/src-tauri/icons/icon.svg`
+- 名前とアイコンは特定のキャラクターに依存させない。キャラクターは差し替えられ、人間以外も選べる。アイコンの原本は `app/src-tauri/icons/icon.svg`
 - dmg 1 つで完結する。`.app` に familiar（sidecar）と `prompts/` を同梱し、`/Applications` から起動すると定期見回りとログイン時の起動をアプリが登録する
 - 公証は GitHub Actions（`.github/workflows/release.yml`）で行う。必要な secret は `docs/release.md`
 

@@ -2,7 +2,7 @@
 // and a large speech bubble with the suggestions. It only reads live.json; every state change goes through the familiar CLI.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::{fs, os::fd::AsRawFd, path::{Path, PathBuf}, process::Command};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WindowEvent};
+use tauri::{ipc::Response, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WindowEvent};
 
 const BUBBLE_OVERLAP: f64 = 110.0; // logical px the bubble overlaps the mascot window, so the tail reaches her
 const BUBBLE_GAP: f64 = 12.0; // logical px between the bubble and the bottom screen edge
@@ -114,6 +114,29 @@ fn log(msg: String) { eprintln!("[page] {msg}"); }
 #[tauri::command]
 fn qa_flags() -> String { std::env::var("MASCOT_QA").unwrap_or_default() }
 
+fn packs_dir() -> PathBuf { home().join(".local/share/familiar/packs") }
+
+fn is_pack_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// The character chosen in config.json. None means the default pack in the app.
+#[tauri::command]
+fn character() -> Option<String> {
+    let config = fs::read(state_dir().join("config.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&config).ok()?;
+    let id = value.get("character")?.as_str()?;
+    (is_pack_id(id) && packs_dir().join(id).is_dir()).then(|| id.to_string())
+}
+
+#[tauri::command]
+fn pack_file(id: String, name: String) -> Result<Response, String> {
+    let safe = is_pack_id(&id) && (name == "clips.json"
+        || name.strip_suffix(".mp4").is_some_and(is_pack_id));
+    if !safe { return Err("invalid pack file".into()); }
+    fs::read(packs_dir().join(id).join("clips").join(name)).map(Response::new).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn live() -> String {
     std::fs::read_to_string(state_dir().join("live.json")).unwrap_or_else(|_| "{}".into())
@@ -195,7 +218,7 @@ fn main() {
     let Some(_instance) = acquire_single_instance() else { return };
     if let Err(e) = register_agents() { eprintln!("failed to register agents: {e}"); }
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![quit, log, qa_flags, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel])
+        .invoke_handler(tauri::generate_handler![quit, log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

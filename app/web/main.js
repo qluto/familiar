@@ -27,12 +27,33 @@ function draw(v) {
 }
 
 const NAMES = [...new Set([...Object.keys(Brain.GRAPH)])];
-const blobs = {};
+let blobs = {};
 let meta = {};
 const video = document.createElement("video");
 video.muted = true; video.playsInline = true; video.preload = "auto";
-async function load(n) {
-  blobs[n] = URL.createObjectURL(await (await fetch(`clips/${n}.mp4`)).blob());
+// パックは全部同じ形式。id が null なら同梱のデフォルト、それ以外は利用者の手元のパック
+async function readPack(id, names) {
+  const read = id
+    ? (name) => tauri.core.invoke("pack_file", { id, name })
+    : async (name) => (await fetch(`packs/default/clips/${name}`)).arrayBuffer();
+  const json = JSON.parse(new TextDecoder().decode(await read("clips.json")));
+  const urls = {};
+  await Promise.all(names.map(async (n) => {
+    urls[n] = URL.createObjectURL(new Blob([await read(`${n}.mp4`)], { type: "video/mp4" }));
+  }));
+  return { json, urls };
+}
+async function loadPack(names) {
+  const id = tauri ? await tauri.core.invoke("character") : null;
+  try {
+    const pack = await readPack(id, names);
+    meta = pack.json; blobs = pack.urls;
+    log("pack " + (id ?? "default"));
+  } catch (e) { // 壊れたパックでも起動できるようにする
+    log(`pack ${id} failed: ${e}`);
+    const pack = await readPack(null, names);
+    meta = pack.json; blobs = pack.urls;
+  }
 }
 function open(n) {
   return new Promise((ok, ng) => {
@@ -211,8 +232,7 @@ function startPolling() {
   if (!QA.has("nobreath")) startBreathing();
   if (QA.has("hide")) canvas.style.display = "none";
   if (!QA.has("nopoll")) startPolling();
-  meta = await (await fetch("clips/clips.json")).json();
-  await Promise.all((QA.has("noload") ? ["blink"] : NAMES).map(load));
+  await loadPack(QA.has("noload") ? ["blink"] : NAMES);
   log("loaded");
   startLive();
   life();

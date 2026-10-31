@@ -9,5 +9,5 @@ Claude Code の権限（claude.ai コネクタの Slack / Gmail / Google Calenda
 - 採用したタスクは Linear に作る
 
 ## 関連プロジェクト
-- マスコット: `~/dev/projects/animation-studio/2d/clip-mascot`（Tauri、`app/web/brain.js` が状態遷移。ハブ F 正面 / B 背面 / T 考え中 / I ひらめき）。素材の作り方は同ディレクトリの `RECIPE.md`
+- キャラクターはパック（`docs/character-pack.md`）。リポジトリに入れるのは、権利の問題がないデフォルトだけ。個人のパックは `~/.local/share/familiar/packs/` に置き、絶対にコミットしない
 - iPhone・通知: `~/dev/projects/mobile-herdr`（`host/notify` の launchd 常駐 `herdr-notify` が APNs を送る）
