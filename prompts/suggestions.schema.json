@@ -1,0 +1,163 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "coverage",
+    "suggestions"
+  ],
+  "properties": {
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "status",
+          "note"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "gmail",
+              "notion",
+              "slack",
+              "calendar",
+              "github",
+              "linear"
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "failed"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "suggestions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dedupe_key",
+          "title",
+          "why",
+          "sources",
+          "urgency",
+          "effort",
+          "kind",
+          "linear_draft",
+          "confidence"
+        ],
+        "properties": {
+          "dedupe_key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "url",
+                "excerpt"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "gmail",
+                    "notion",
+                    "slack",
+                    "calendar",
+                    "github",
+                    "linear"
+                  ]
+                },
+                "url": {
+                  "type": "string"
+                },
+                "excerpt": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "urgency": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "effort": {
+            "enum": [
+              "small",
+              "medium",
+              "large"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "code",
+              "reply",
+              "meeting_prep",
+              "follow_up",
+              "other"
+            ]
+          },
+          "linear_draft": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "team",
+              "title",
+              "description",
+              "due"
+            ],
+            "properties": {
+              "team": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "due": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    }
+  }
+}
