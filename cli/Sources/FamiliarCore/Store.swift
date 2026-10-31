@@ -1,6 +1,6 @@
 import Foundation
 
-public enum StewardError: Error, CustomStringConvertible {
+public enum FamiliarError: Error, CustomStringConvertible {
     case notFound(String)
     case invalidState(String)
     case failed(String)
@@ -88,7 +88,7 @@ public struct Store {
 
     public func transition(_ id: String, now: Date = Date(), _ body: (inout Suggestion) throws -> Void) throws {
         try update(now: now) { items in
-            guard let i = items.firstIndex(where: { $0.id == id }) else { throw StewardError.notFound(id) }
+            guard let i = items.firstIndex(where: { $0.id == id }) else { throw FamiliarError.notFound(id) }
             try body(&items[i])
             items[i].updatedAt = now
         }
@@ -121,9 +121,9 @@ public struct Store {
     private func locked<T>(_ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
         let fd = open(paths.lock.path, O_CREAT | O_RDWR, 0o600)
-        guard fd >= 0 else { throw StewardError.failed("ロックを開けません: \(paths.lock.path)") }
+        guard fd >= 0 else { throw FamiliarError.failed("ロックを開けません: \(paths.lock.path)") }
         defer { close(fd) }
-        guard flock(fd, LOCK_EX) == 0 else { throw StewardError.failed("ロックを取得できません") }
+        guard flock(fd, LOCK_EX) == 0 else { throw FamiliarError.failed("ロックを取得できません") }
         defer { flock(fd, LOCK_UN) }
         return try body()
     }

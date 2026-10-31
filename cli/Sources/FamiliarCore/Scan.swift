@@ -105,7 +105,7 @@ public struct Scanner {
                 drafts = second.suggestions
                 cost += secondRun.cost
                 note += "+\(refine)"
-            } catch let error as StewardError {
+            } catch let error as FamiliarError {
                 // 権限違反は握りつぶさない。それ以外の精査の失敗では、見回りの候補をそのまま残す
                 if case .violation = error { throw error }
                 log("refine failed, keep triage drafts: \(error)", now: now)

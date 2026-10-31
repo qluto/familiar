@@ -10,13 +10,22 @@ public struct Paths {
     }
 
     public static func standard(env: [String: String] = ProcessInfo.processInfo.environment) -> Paths {
-        let state = env["DESK_STEWARD_STATE"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/state/desk-steward")
-        // steward/Sources/StewardCore/Paths.swift から repo の直下へ戻る
-        let root = env["DESK_STEWARD_ROOT"].map { URL(fileURLWithPath: $0) }
+        let state = env["FAMILIAR_STATE"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/state/familiar")
+        let prompts = env["FAMILIAR_ROOT"].map { URL(fileURLWithPath: $0).appendingPathComponent("prompts") }
+            ?? bundledPrompts(executable: Bundle.main.executableURL)
+            // 開発時: cli/Sources/FamiliarCore/Paths.swift から repo の直下へ戻る
             ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-                .deletingLastPathComponent().deletingLastPathComponent()
-        return Paths(state: state, prompts: root.appendingPathComponent("prompts"))
+                .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("prompts")
+        return Paths(state: state, prompts: prompts)
+    }
+
+    /// アプリ同梱のとき、実行ファイルは Contents/MacOS、プロンプトは Contents/Resources にある。
+    static func bundledPrompts(executable: URL?) -> URL? {
+        guard let contents = executable?.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent(),
+              contents.lastPathComponent == "Contents" else { return nil }
+        let prompts = contents.appendingPathComponent("Resources/prompts")
+        return FileManager.default.fileExists(atPath: prompts.path) ? prompts : nil
     }
 
     public var suggestions: URL { state.appendingPathComponent("suggestions.jsonl") }

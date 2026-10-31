@@ -17,7 +17,7 @@ for (const h of hubs) {
 }
 for (const [k, c] of Object.entries(BLINK)) if (GRAPH[c][0] !== k || GRAPH[c][1] !== k) fail("まばたきが別ハブ " + c);
 function lcg(s) { return () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32; }
-// steward の状態を乱数で変えながら、合図の約束が守られるかを見る。
+// familiar の状態を乱数で変えながら、合図の約束が守られるかを見る。
 let total = 0;
 const reached = new Set();
 const SIGNAL = ["think_in", "think_a", "think_b", "think_out", "idea", "idea_out", "idea_ask", "ask_in", "ask_wait", "ask_ok", "ask_out", "blink_t", "blink_q"];

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import StewardCore
+@testable import FamiliarCore
 
 func draft(_ title: String = "t", url: String = "https://example.com/a") -> Draft {
     Draft(title: title, why: "w", sources: [Source(kind: "gmail", url: url, excerpt: "e")],
@@ -21,6 +21,15 @@ func tokyo() -> Calendar {
 
 func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     tokyo().date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
+}
+
+@Test func bundledPromptsAreFoundOnlyInsideAnApp() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let app = root.appendingPathComponent("a.app/Contents")
+    try FileManager.default.createDirectory(at: app.appendingPathComponent("Resources/prompts"), withIntermediateDirectories: true)
+    let found = Paths.bundledPrompts(executable: app.appendingPathComponent("MacOS/familiar"))
+    #expect(found?.lastPathComponent == "prompts")
+    #expect(Paths.bundledPrompts(executable: root.appendingPathComponent(".build/release/familiar")) == nil)
 }
 
 @Test func livePendingFollowsDecisions() throws {
@@ -170,7 +179,7 @@ func assistant(_ name: String, _ input: [String: Any] = [:]) -> Event {
     var d = draft()
     d.linear_draft.due = "2026-11-01"
     let s = Suggestion(draft: d, now: Date())
-    #expect(throws: StewardError.self) { try Acceptor.issueInput(s, edits: AcceptEdits(), defaultTeam: nil) }
+    #expect(throws: FamiliarError.self) { try Acceptor.issueInput(s, edits: AcceptEdits(), defaultTeam: nil) }
     let input = try Acceptor.issueInput(s, edits: AcceptEdits(title: "直した", due: "2026-12-01"), defaultTeam: "Qluto")
     #expect(input["title"] as? String == "直した")
     #expect(input["dueDate"] as? String == "2026-12-01")

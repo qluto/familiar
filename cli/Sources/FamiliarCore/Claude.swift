@@ -126,11 +126,11 @@ extension RunOutcome {
 
     /// 成功した実行の structured_output を取り出す。
     func structured<T: Decodable>(_ type: T.Type) throws -> T {
-        if let violation { throw StewardError.violation(violation) }
+        if let violation { throw FamiliarError.violation(violation) }
         guard exitCode == 0, let result, result["is_error"] as? Bool != true,
               let output = result["structured_output"] else {
             let detail = (result?["subtype"] as? String) ?? "結果なし"
-            throw StewardError.failed("claude の実行に失敗しました（exit \(exitCode), \(detail)）")
+            throw FamiliarError.failed("claude の実行に失敗しました（exit \(exitCode), \(detail)）")
         }
         return try JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: output))
     }

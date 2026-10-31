@@ -32,7 +32,7 @@ public struct Acceptor {
 
     static func issueInput(_ s: Suggestion, edits: AcceptEdits, defaultTeam: String?) throws -> [String: Any] {
         guard let team = edits.team ?? defaultTeam ?? s.draft.linear_draft.team else {
-            throw StewardError.invalidState("チームが未定です。--team か config.json の linearTeam を指定してください")
+            throw FamiliarError.invalidState("チームが未定です。--team か config.json の linearTeam を指定してください")
         }
         let links = s.draft.sources.map { "- \($0.kind): \($0.url)" }.joined(separator: "\n")
         var input: [String: Any] = [
@@ -70,7 +70,7 @@ public struct Acceptor {
         // 先に accepting へ移し、二重採用で issue が重複しないようにする
         try store.transition(id) { s in
             guard s.status.isOpen || (force && s.status == .accepting) else {
-                throw StewardError.invalidState("提案 \(id) は \(s.status.rawValue) のため採用できません")
+                throw FamiliarError.invalidState("提案 \(id) は \(s.status.rawValue) のため採用できません")
             }
             input = try Self.issueInput(s, edits: edits, defaultTeam: config?.linearTeam)
             s.status = .accepting
@@ -106,7 +106,7 @@ public struct Acceptor {
                 throw error
             }
             // 書き込みが走った可能性があるので new に戻さない
-            throw StewardError.failed("\(error)\nLinear に issue ができていないか確認してください。作られていなければ accept --force で再実行できます")
+            throw FamiliarError.failed("\(error)\nLinear に issue ができていないか確認してください。作られていなければ accept --force で再実行できます")
         }
     }
 }

@@ -1,10 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "desk-steward",
+  "productName": "familiar",
   "version": "0.1.0",
-  "identifier": "dev.qluto.desk-steward",
+  "identifier": "io.qluto.familiar",
   "build": {
-    "frontendDist": "../web"
+    "frontendDist": "../web",
+    "beforeBuildCommand": "bash prepare-bundle.sh"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -12,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "desk-steward",
+        "title": "familiar",
         "width": 420,
         "height": 560,
         "transparent": true,
@@ -74,6 +75,12 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "Developer ID Application: Ryosuke Fukazawa (RS9ESGN72R)"
+    },
+    "externalBin": [
+      "binaries/familiar"
+    ],
+    "resources": {
+      "../../prompts/": "prompts/"
     }
   }
 }

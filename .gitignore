@@ -4,3 +4,4 @@ target/
 *.log
 .build/
 app/src-tauri/gen/
+app/src-tauri/binaries/

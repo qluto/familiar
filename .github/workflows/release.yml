@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          swift test --package-path cli
+          node app/qa_graph.mjs
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Build, sign and notarize the app
+        working-directory: app/src-tauri
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: cargo tauri build
+      - name: Notarize and staple the dmg
+        run: |
+          dmg=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg)
+          xcrun notarytool submit "$dmg" --wait \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"
+          xcrun stapler staple "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: familiar-dmg
+          path: app/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" app/src-tauri/target/release/bundle/dmg/*.dmg --generate-notes

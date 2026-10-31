@@ -1,4 +1,4 @@
-# desk-steward — 作業メモ（Claude 向け）
+# familiar — 作業メモ（Claude 向け）
 
 Claude Code の権限（claude.ai コネクタの Slack / Gmail / Google Calendar / Notion / GitHub / Linear）で定期的に見回り、
 「タスクにした方がよさそうなこと」を提案する常駐アシスタント。企画は [`docs/plan.md`](docs/plan.md)。

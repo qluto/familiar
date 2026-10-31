@@ -114,7 +114,7 @@ function react() {
   interrupt();
 }
 
-// ── steward の状態 ─────────────────
+// ── familiar の状態 ─────────────────
 const POLL_SECONDS = 2;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
 let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };

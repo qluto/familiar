@@ -1,6 +1,6 @@
 // 状態遷移と行動の選択。描画に依存しないので qa_graph.mjs でそのまま検査できる。
 // ハブ: F=正面 B=背面 T=考え中 I=ひらめき（通過点） Q=耳を傾ける
-// T / I / Q は steward の状態を伝える合図なので、自発的には入らない。
+// T / I / Q は familiar の状態を伝える合図なので、自発的には入らない。
 (function (g) {
   const GRAPH = {
     blink: ["F", "F"], idle_f: ["F", "F"], look: ["F", "F"], stretch: ["F", "F"],
@@ -27,7 +27,7 @@
       this.scanning = false; this.found = false; this.waiting = 0; this.panel = false; this.asked = -1e9;
     }
     click() { this.pending = true; }
-    /** steward の状態を受け取る。クリップの途中でも呼んでよく、次のハブで反映する。 */
+    /** familiar の状態を受け取る。クリップの途中でも呼んでよく、次のハブで反映する。 */
     sync({ scanning, waiting, panel }) {
       this.scanning = scanning; this.waiting = waiting; this.panel = panel;
     }

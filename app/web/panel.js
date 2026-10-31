@@ -5,7 +5,7 @@ const heading = document.getElementById("h");
 const close = () => core.invoke("hide_panel");
 document.getElementById("close").onclick = close;
 addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-const steward = (...args) => core.invoke("steward", { args });
+const familiar = (...args) => core.invoke("familiar", { args });
 
 function el(tag, props = {}, ...children) {
   const n = document.createElement(tag);
@@ -39,7 +39,7 @@ function card(s) {
     buttons.forEach((b) => (b.disabled = true));
     note.textContent = "";
     try {
-      after(await steward(...args));
+      after(await familiar(...args));
     } catch (e) {
       note.textContent = String(e);
       buttons.forEach((b) => (b.disabled = false));
@@ -100,7 +100,7 @@ function showError(e) {
 
 async function reload() {
   const live = JSON.parse(await core.invoke("live"));
-  const items = JSON.parse(await steward("list", "--all", "--json"));
+  const items = JSON.parse(await familiar("list", "--all", "--json"));
   const fresh = items.filter((s) => s.status === "new");
   const held = items.filter((s) => s.status === "snoozed");
   heading.textContent = fresh.length ? `気になることが ${fresh.length} 件あります`

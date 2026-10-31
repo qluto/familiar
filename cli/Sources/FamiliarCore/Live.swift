@@ -1,6 +1,6 @@
 import Foundation
 
-/// マスコットが読む現在の状態。steward だけが書き、マスコットは読むだけ。
+/// マスコットが読む現在の状態。familiar だけが書き、マスコットは読むだけ。
 public struct Live: Codable, Equatable {
     public var scanning = false
     public var scanStarted: Date?

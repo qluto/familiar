@@ -1,6 +1,6 @@
 import Foundation
 
-/// 重複判定のキーを出典 URL から作る。モデルの表記ゆれに左右されないよう、steward 側で決める。
+/// 重複判定のキーを出典 URL から作る。モデルの表記ゆれに左右されないよう、familiar 側で決める。
 public enum Dedupe {
     public static func keys(for sources: [Source]) -> [String] {
         var seen = Set<String>()

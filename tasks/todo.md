@@ -1,4 +1,4 @@
-# desk-steward
+# familiar
 
 企画: `docs/plan.md` / スパイク結果: `docs/spike-results.md`
 
@@ -9,36 +9,41 @@
 - [x] S4: 吹き出しを別ウィンドウにしてマスコットの移動に追従させる（ドラッグでの実機確認は未実施）
 
 ## P1
-- [x] `steward scan / list / show / accept / dismiss / snooze` と状態ファイル（`steward/`、Swift）
-- [x] 重複キーを steward 側で出典 URL から正規化
+- [x] `familiar scan / list / show / accept / dismiss / snooze` と状態ファイル（`cli/`、Swift）
+- [x] 重複キーを familiar 側で出典 URL から正規化
 - [x] ツール一覧と呼び出し履歴を許可リストと照合し、ずれたら止める
 - [x] partial の情報源は cursor を進めない（期間の上限は 7 日）
 - [x] 実際の Linear 書き込みの確認（QLU-6 を作成）
 
 ## P2
-- [x] `steward tick`（作業時間帯・間隔・会議前のきっかけ）と launchd の登録スクリプト（`steward/install.sh`）
+- [x] `familiar tick`（作業時間帯・間隔・会議前のきっかけ）と launchd の登録スクリプト（`cli/install.sh`）
 - [x] 2 段構え（Haiku → Sonnet）。新しい候補があるときだけ Sonnet を呼ぶ
 - [x] launchd で 6 情報源を通しで確認（一時ジョブと状態のコピーで実施）
 - [x] Gmail のページ送りと Slack / Notion の coverage の基準を `scan.md` に明記
-- [x] `steward status`
+- [x] `familiar status`
 - [x] 常駐の登録（2026-10-31）
 - [ ] 平日に 1 日放置して、提案が溜まること・同じ提案が出ないことを確認
 - [ ] Haiku の取りこぼしを確認する
 
 ## P3
 - [x] clip-mascot の `app/` を取り込み、T / I / Q を合図専用に変更（`docs/plan.md` 3.3）
-- [x] `live.json` と `steward list --json`
+- [x] `live.json` と `familiar list --json`
 - [x] 吹き出しと提案パネル
 - [x] 状態機械の検査（`node app/qa_graph.mjs`）と台本での実機確認
-- [x] `steward/install.sh` と `app/install.sh` の実行
+- [x] `cli/install.sh` と `app/install.sh` の実行
 - [x] 大きな吹き出しの操作を実機で確認
 - [x] 署名済みの `.app` と dmg のビルド（`cargo tauri build`）
-- [ ] 公証（Apple の認証情報が未設定）
+
+## 配布
+- [x] familiar と prompts の同梱、アプリによる launchd 登録、二重起動の防止
+- [x] GitHub Actions のワークフローと `docs/release.md`
+- [x] キャラクターに依存しないアプリアイコン（`app/src-tauri/icons/icon.svg` が原本）
+- [ ] GitHub にリポジトリを作り、secret を登録して、ワークフローを実行する
 
 ## 未決
 - [ ] Slack の DM 検索の 0 件が正しいか確認する
 - [ ] Notion の更新をどう検知するか（現プランでは更新日時で絞れない）
-- [ ] Linear のラベル（`from:steward` を付けるか）
+- [ ] Linear のラベル（`from:familiar` を付けるか）
 
 ## レビュー（2026-10-31）
 - P2: launchd 経由の 2 段構えで 6 情報源すべて ok（61 秒、換算 $0.096）。7 日分の見回りで Haiku は CI 失敗の提案を出さなかった。実行ごとのばらつきがあり、平日の結果で判断する

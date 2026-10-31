@@ -1,8 +1,8 @@
 import Foundation
-import StewardCore
+import FamiliarCore
 
 let usage = """
-usage: steward <command>
+usage: familiar <command>
   scan [--model MODEL]                     見回りを 1 回行う（既定: haiku → sonnet の 2 段。指定時は 1 段）
   tick                                     launchd 用。予定に合えば見回る
   status                                   最後の見回りと当日の使用量
@@ -22,7 +22,7 @@ struct Args {
         var it = raw.makeIterator()
         while let a = it.next() {
             if valued.contains(a) {
-                guard let v = it.next() else { throw StewardError.invalidState("\(a) に値が必要です") }
+                guard let v = it.next() else { throw FamiliarError.invalidState("\(a) に値が必要です") }
                 options[a] = v
             } else if a.hasPrefix("--") {
                 flags.insert(a)
@@ -33,7 +33,7 @@ struct Args {
     }
 
     func id() throws -> String {
-        guard let id = positional.first else { throw StewardError.invalidState(usage) }
+        guard let id = positional.first else { throw FamiliarError.invalidState(usage) }
         return id
     }
 }
@@ -95,7 +95,7 @@ func run() throws {
         shown.forEach(printRow)
     case "show":
         let id = try Args(rest, valued: []).id()
-        guard let s = try store.load().first(where: { $0.id == id }) else { throw StewardError.notFound(id) }
+        guard let s = try store.load().first(where: { $0.id == id }) else { throw FamiliarError.notFound(id) }
         printRow(s)
         print("なぜ: \(s.draft.why)")
         for src in s.draft.sources { print("出典 [\(src.kind)] \(src.url)\n  \(src.excerpt)") }
@@ -111,17 +111,17 @@ func run() throws {
         let args = try Args(rest, valued: [])
         let reason = args.positional.dropFirst().joined(separator: " ")
         try store.transition(try args.id()) { s in
-            guard s.status.isOpen else { throw StewardError.invalidState("\(s.id) は \(s.status.rawValue) です") }
+            guard s.status.isOpen else { throw FamiliarError.invalidState("\(s.id) は \(s.status.rawValue) です") }
             s.status = .dismissed
             s.dismissReason = reason.isEmpty ? nil : reason
         }
     case "snooze":
         let args = try Args(rest, valued: [])
         guard let hours = Double(args.positional.dropFirst().first ?? "24"), hours > 0 else {
-            throw StewardError.invalidState("時間数が正しくありません")
+            throw FamiliarError.invalidState("時間数が正しくありません")
         }
         try store.transition(try args.id()) { s in
-            guard s.status.isOpen else { throw StewardError.invalidState("\(s.id) は \(s.status.rawValue) です") }
+            guard s.status.isOpen else { throw FamiliarError.invalidState("\(s.id) は \(s.status.rawValue) です") }
             s.status = .snoozed
             s.snoozedUntil = Date().addingTimeInterval(hours * 3600)
         }

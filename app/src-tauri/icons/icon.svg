@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6f9460"/>
+      <stop offset="1" stop-color="#4a6b40"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS のアイコン枠: 1024 の中に 824 の角丸四角 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <!-- アプリの吹き出しと同じ形: 右下だけ角を立て、下辺を水平に延ばした直角二等辺三角形の尾 -->
+  <g transform="translate(-15 37)">
+  <path fill="#fffdf7" d="M322 262H642A120 120 0 0 1 762 382V598L852 688H322A120 120 0 0 1 202 568V382A120 120 0 0 1 322 262Z"/>
+  <!-- 気づきのきらめき -->
+  <path fill="#5c7f4f" d="M482 322C496 412 524 440 614 454C524 468 496 496 482 586C468 496 440 468 350 454C440 440 468 412 482 322Z" transform="translate(0 21)"/>
+  <path fill="#d9b45b" d="M640 330C646 362 656 372 688 378C656 384 646 394 640 426C634 394 624 384 592 378C624 372 634 362 640 330Z"/>
+  </g>
+</svg>

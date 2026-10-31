@@ -561,15 +561,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "desk-steward-mascot"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "tauri",
- "tauri-build",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -732,6 +723,16 @@ dependencies = [
  "serde",
  "serde_core",
  "typeid",
+]
+
+[[package]]
+name = "familiar-mascot"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tauri",
+ "tauri-build",
 ]
 
 [[package]]

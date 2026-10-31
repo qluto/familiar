@@ -1,4 +1,4 @@
-# desk-steward 企画書（ドラフト）
+# familiar 企画書（ドラフト）
 
 作成: 2026-10-31 / 状態: 企画中（実装前）
 
@@ -25,13 +25,13 @@ OpenClaw との違い: チャットの入口や何でもできる実行役は作
 
 ## 3. 構成
 ```
-desk-steward/
-  steward/   見回りの CLI + launchd 常駐（スケジューラ）
-  app/       マスコット（clip-mascot の app/ を取り込み、提案パネルと吹き出しを足す）
+familiar/
+  cli/   見回りの CLI + launchd 常駐（スケジューラ）
+  app/       マスコット（clip-mascot の app/ を取り込み、提案パネルと吹き出しを足す）。familiar と prompts/ を同梱する
   prompts/   見回りの指示、出力スキーマ
   memory/    好み（採用・却下の傾向）。見回りのたびに読む
 
-~/.local/state/desk-steward/
+~/.local/state/familiar/
   suggestions.jsonl   提案と状態（new / shown / accepted / snoozed / dismissed）
   cursor.json         情報源ごとの「どこまで見たか」
   scan.log
@@ -48,21 +48,21 @@ claude -p "<prompts/scan.md + 前回以降の範囲 + 未処理・却下済み�
 ```
 - 各指定の理由は [`spike-results.md`](spike-results.md)。ユーザー設定が `defaultMode: auto` なので `dontAsk` は必須。動く実例は `spikes/scan-once.sh`
 - ツール一覧と呼び出し履歴を許可リストと照合し、ずれていたら見回りを止める（初期化時点の一覧だけでは、遅れて接続するサーバーを見落とす）
-- `dedupe_key` はモデルに作らせず、steward が出典 URL から正規化する
+- `dedupe_key` はモデルに作らせず、familiar が出典 URL から正規化する
 - 出力: `coverage[]` = `{source, status(ok|partial|failed), note}` と `suggestions[]` = `{dedupe_key, title, why, sources[{kind, url, excerpt}], urgency, effort, kind(code|reply|meeting_prep|follow_up|other), linear_draft{team, title, description, due}, confidence}`
 - 重複を除く: `dedupe_key`（出典 URL ベース）と Linear の既存 issue 検索で、出したことがあるもの・すでに issue 化されたものを除く
 - 2 段構え: Haiku で動きの有無と候補を見て、既知を除いた候補があれば Sonnet で本文を読み下書きを作る。Sonnet だけだと 6 情報源で 1 日約 $5.5 相当になるため（S2）。候補の取りこぼしは P2 で確認する
 
 ### 3.2 採用時の書き込み（別プロセス・書き込み専用）
 - 採用した提案の **確定済みの値** だけを渡し、`mcp__claude_ai_Linear__save_issue` だけを許可した `claude -p` で作る
-- `save_issue` は `id` を渡すと既存 issue を更新するので、steward が実行中のイベントを見て、確定値と完全一致する 1 回だけを通す。
+- `save_issue` は `id` を渡すと既存 issue を更新するので、familiar が実行中のイベントを見て、確定値と完全一致する 1 回だけを通す。
   不一致なら停止するが、検知と実行は並行するため事前遮断ではない（値は人が確認済みという前提で許容する）
 - **見回り役は書き込みツールを一切持たない。** メールや Slack に仕込まれた指示（プロンプトインジェクション）が
   影響できるのは提案の文面までで、人が見てからでないと外部に何も書かれない
 
 ### 3.3 マスコット（app/）
 - clip-mascot の `app/` を取り込んだ。素材の生成ツールは animation-studio 側に残す
-- **T / I / Q は steward の合図専用。** 自発動作から外し、提案がないのに閃いて見えないようにする
+- **T / I / Q は familiar の合図専用。** 自発動作から外し、提案がないのに閃いて見えないようにする
 
 | 状況 | 動作 |
 |---|---|
@@ -78,12 +78,17 @@ claude -p "<prompts/scan.md + 前回以降の範囲 + 未処理・却下済み�
 - 吹き出しは、判断待ちか保留が 1 件でもあれば出し続ける。見回り中も消さない
 - 提案は「大きな吹き出し」に表示する。紙色・線・尾を小さな吹き出しと揃え、同じ位置から広げる。保留中の提案もここで判断できる
 - どちらも別ウィンドウで、マスコットの移動に追従する。閉じるのは ×、Esc、マスコットの再クリック
-- steward とのやりとり: マスコットは `live.json` を 2 秒ごとに読むだけ。状態の変更は必ず `steward` CLI を経由する。マスコットを閉じても見回りは止まらない
+- familiar とのやりとり: マスコットは `live.json` を 2 秒ごとに読むだけ。状態の変更は必ず `familiar` CLI を経由する。マスコットを閉じても見回りは止まらない
 - 提案の文面は信頼できないデータなので `textContent` でのみ表示し、外部リンクは https だけ開く
 
+### 配布
+- 名前とアイコンは特定のキャラクターに依存させない。将来はキャラクターを差し替えられるようにし、人間以外も選べるようにする。アイコンの原本は `app/src-tauri/icons/icon.svg`
+- dmg 1 つで完結する。`.app` に familiar（sidecar）と `prompts/` を同梱し、`/Applications` から起動すると定期見回りとログイン時の起動をアプリが登録する
+- 公証は GitHub Actions（`.github/workflows/release.yml`）で行う。必要な secret は `docs/release.md`
+
 ### 3.4 iPhone（mobile-herdr と連携）
-- 送信は既存の `herdr-notify`（APNs 実装済み）に「任意の通知を送る」入口を足して頼む。steward 自身は APNs の鍵を持たない
-- アプリ側: 通知アクション「採用 / 却下」→ SSH で `steward accept|dismiss <id>`。一覧画面は後回し
+- 送信は既存の `herdr-notify`（APNs 実装済み）に「任意の通知を送る」入口を足して頼む。familiar 自身は APNs の鍵を持たない
+- アプリ側: 通知アクション「採用 / 却下」→ SSH で `familiar accept|dismiss <id>`。一覧画面は後回し
 
 ## 4. 先に検証すること（スパイク）
 S1〜S3 は完了、S4 は未着手。結果は [`spike-results.md`](spike-results.md)。
@@ -99,16 +104,16 @@ S1〜S3 は完了、S4 は未着手。結果は [`spike-results.md`](spike-resul
 | 段階 | 内容 | 完了の条件 |
 |---|---|---|
 | P0 | S1〜S3 | 1 回の見回りがターミナルで JSON を返す |
-| P1 | `steward scan / list / accept / dismiss / snooze` と状態ファイル、重複除去 | ターミナルだけで提案 → 採用 → Linear に issue |
+| P1 | `familiar scan / list / accept / dismiss / snooze` と状態ファイル、重複除去 | ターミナルだけで提案 → 採用 → Linear に issue |
 | P2 | launchd で定期実行、作業時間帯・間隔・カレンダーきっかけ | 1 日放置して提案が溜まる。同じ提案が繰り返し出ない |
 | P3 | マスコット取り込み、考え中・ひらめき・吹き出し・提案パネル | Mac 上で全部完結 |
 | P4 | iPhone 通知（離席時・緊急）と通知アクション | 外出先から採用できる |
 | P5 | 好みの学習（採用・却下の理由を memory に要約）、「herdr で着手」 | 却下が減る |
 
 ## 6. 決めていないこと
-決定済み: steward は Swift。既定は平日 9–20 時・30 分間隔、会議の 30 分前に臨時の見回り（`config.json` で変更可）。
-launchd は 5 分ごとに `steward tick` を起こし、実行の要否は steward が判断する。
+決定済み: familiar は Swift。既定は平日 9–20 時・30 分間隔、会議の 30 分前に臨時の見回り（`config.json` で変更可）。
+launchd は 5 分ごとに `familiar tick` を起こし、実行の要否は familiar が判断する。
 
-- Linear のラベル（例: `from:steward`）
+- Linear のラベル（例: `from:familiar`）
 - 却下した提案を何日覚えておくか
 - 提案の上限（1 回 5 件まで、など。多すぎるとノイズになる）

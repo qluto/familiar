@@ -43,7 +43,7 @@ MCP サーバーが `pending` のまま初期化が終わると、そのツー�
 | 手動（6 情報源） | Haiku | 7 日 | 44 秒 | $0.016 | 2 件 |
 
 - 全実行で最終的に schema どおりの `structured_output` が返った。Haiku は 1 回、JSON の不正で再試行した。回数が少なく、安定の証明としては弱い
-- `dedupe_key` は一部のみ安定。OpenAI のメールは一致したが、CI 失敗は Sonnet が `github:…`、Haiku が `gmail:…` を付けた。**モデルに作らせず、steward 側で出典 URL から正規化する**
+- `dedupe_key` は一部のみ安定。OpenAI のメールは一致したが、CI 失敗は Sonnet が `github:…`、Haiku が `gmail:…` を付けた。**モデルに作らせず、familiar 側で出典 URL から正規化する**
 - 提案の範囲はモデルで異なる。Sonnet は本文を 3 通読み、CI 失敗を拾った。Haiku は本文を 1 通しか読まず、CI 失敗を拾わなかった
 - 平日 9–20 時・30 分間隔（1 日 22 回）の単純計算で、Gmail と Notion だけの場合は Sonnet 約 $3/日、Haiku 約 $0.2/日。6 情報源（7 日分の実行）の単価なら Sonnet 約 $5.5/日、Haiku 約 $0.35/日。サブスクの枠をどれだけ消費するかは未測定
 - 2 段構えを採る（判断の詳細は企画書 3.1）
