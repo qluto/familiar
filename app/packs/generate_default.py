@@ -64,19 +64,20 @@ CLIPS = {
     "ask_out": path([(0, Q), (1, F)]),
 }
 
-BODY = "M0 -292C14 -244 62 -214 104 -166C136 -130 150 -98 150 -66C150 -8 84 0 0 0C-84 0 -150 -8 -150 -66C-150 -118 -96 -160 -52 -204C-22 -234 -6 -258 0 -292Z"
 SPARK = "M0 -46C5 -14 14 -5 46 0C14 5 5 14 0 46C-5 14 -14 5 -46 0C-14 -5 -5 -14 0 -46Z"
+SIZE = 260  # アプリアイコンと同じ角丸四角。窓は縦横 2 倍の座標で描く
+CX, CY = 362, H - 34 - SIZE / 2  # 吹き出しの尾の先に寄せ、下端を吹き出しに揃える
 
 
 def svg(p):
-    s = 1.45  # 窓の下端に座る
-    ry = 19 * max(.08, 1 - p["shut"])
-    eyes = "".join(f'<ellipse cx="{x + p["ex"]:.1f}" cy="{-92 + p["ey"]:.1f}" rx="15" ry="{ry:.1f}" fill="#3b3a36"/>' for x in (-48, 48))
-    dots = "".join(f'<circle cx="{118 + i * 34}" cy="{-250 - i * 26}" r="{8 + i * 3}" fill="#5c7f4f" opacity="{p["dots"]:.2f}"/>' for i in range(3))
-    spark = f'<path d="{SPARK}" fill="#d9b45b" transform="translate(150 -276) scale({max(p["spark"], .001):.3f})"/>'
+    eye_h = 66 * max(.13, 1 - p["shut"])
+    eyes = "".join(f'<rect x="{x - 13 + p["ex"]:.1f}" y="{p["ey"] - eye_h / 2:.1f}" width="26" height="{eye_h:.1f}" rx="13" fill="#fffdf7"/>' for x in (-44, 44))
+    dots = "".join(f'<circle cx="{150 + i * 34}" cy="{-150 - i * 30}" r="{8 + i * 3}" fill="#5c7f4f" opacity="{p["dots"]:.2f}"/>' for i in range(3))
+    spark = f'<path d="{SPARK}" fill="#d9b45b" transform="translate(165 -165) scale({max(p["spark"] * 1.15, .001):.3f})"/>'
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">
-<g transform="translate({W / 2} {H - 56}) scale({s}) rotate({p["tilt"]:.2f}) scale({p["bx"]:.3f} {p["sy"] - .05 * p["nod"]:.3f})">
-<path d="{BODY}" fill="#fffdf7" stroke="#5c7f4f" stroke-width="7" stroke-linejoin="round"/>
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f9460"/><stop offset="1" stop-color="#4a6b40"/></linearGradient></defs>
+<g transform="translate({CX} {CY}) rotate({p["tilt"]:.2f}) scale({p["bx"]:.3f} {p["sy"] - .05 * p["nod"]:.3f})">
+<rect x="{-SIZE / 2}" y="{-SIZE / 2}" width="{SIZE}" height="{SIZE}" rx="72" fill="url(#g)"/>
 <g opacity="{p["eyes"]:.2f}" transform="translate(0 {12 * p["nod"]:.1f})">{eyes}</g>{dots}{spark}
 </g></svg>'''
 

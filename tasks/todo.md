@@ -38,7 +38,8 @@
 - [x] familiar と prompts の同梱、アプリによる launchd 登録、二重起動の防止
 - [x] GitHub Actions のワークフローと `docs/release.md`
 - [x] キャラクターに依存しないアプリアイコン（`app/src-tauri/icons/icon.svg` が原本）
-- [ ] GitHub にリポジトリを作り、secret を登録して、ワークフローを実行する
+- [x] MIT ライセンスで公開リポジトリを用意
+- [ ] secret を登録して、ワークフローを実行する
 
 ## キャラクターパック
 - [x] パック形式と読み込み、壊れたパックのときのデフォルトへの切り替え
