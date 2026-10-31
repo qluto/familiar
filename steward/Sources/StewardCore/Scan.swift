@@ -32,6 +32,8 @@ public struct Scanner {
         try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
         guard let lock = ScanLock(url: paths.scanLock) else { return nil }
         defer { withExtendedLifetime(lock) {} }
+        // スヌーズが明けた提案をマスコットへ伝える
+        try store.update(now: now) { _ in }
         let schedule = Schedule(config: Config.load(paths))
         var state = ScheduleState.load(paths.schedule)
         guard let trigger = schedule.decide(now: now, state: state) else { return nil }
@@ -46,8 +48,13 @@ public struct Scanner {
 
     private func scanLocked(triage: String, refine: String?, now: Date) throws -> ScanReport {
         try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
+        try store.updateLive { $0.scanning = true; $0.scanStarted = now }
         do {
             let report = try runStages(triage: triage, refine: refine, now: now)
+            try store.updateLive {
+                $0.scanning = false; $0.scanStarted = nil; $0.scanSeq += 1
+                $0.lastAdded = report.added.count; $0.lastError = nil
+            }
             var state = ScheduleState.load(paths.schedule)
             state.lastSuccess = now
             state.lastError = nil
@@ -56,6 +63,10 @@ public struct Scanner {
             return report
         } catch {
             log("error \(error)", now: now)
+            try? store.updateLive {
+                $0.scanning = false; $0.scanStarted = nil; $0.scanSeq += 1
+                $0.lastAdded = 0; $0.lastError = "\(error)"
+            }
             var state = ScheduleState.load(paths.schedule)
             state.lastError = "\(error)"
             try? state.save(to: paths.schedule)

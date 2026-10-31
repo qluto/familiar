@@ -6,7 +6,7 @@
 - [x] S1: launchd から起動した `claude -p` でコネクタが読めるか。読み取り系ツール名の一覧
 - [x] S2: `--json-schema` で提案 JSON を返させ、所要時間と使用量を測る
 - [x] S3: 6 情報源の認証、許可・拒否リストへの反映、読める範囲の確認
-- [ ] S4: Tauri の 2 つ目のウィンドウ（吹き出し）をマスコットに追従させる（P3 の前に実施）
+- [x] S4: 吹き出しを別ウィンドウにしてマスコットの移動に追従させる（ドラッグでの実機確認は未実施）
 
 ## P1
 - [x] `steward scan / list / show / accept / dismiss / snooze` と状態ファイル（`steward/`、Swift）
@@ -24,6 +24,16 @@
 - [x] 常駐の登録（2026-10-31）
 - [ ] 平日に 1 日放置して、提案が溜まること・同じ提案が出ないことを確認
 - [ ] Haiku の取りこぼしを確認する
+
+## P3
+- [x] clip-mascot の `app/` を取り込み、T / I / Q を合図専用に変更（`docs/plan.md` 3.3）
+- [x] `live.json` と `steward list --json`
+- [x] 吹き出しと提案パネル
+- [x] 状態機械の検査（`node app/qa_graph.mjs`）と台本での実機確認
+- [x] `steward/install.sh` と `app/install.sh` の実行
+- [x] 大きな吹き出しの操作を実機で確認
+- [x] 署名済みの `.app` と dmg のビルド（`cargo tauri build`）
+- [ ] 公証（Apple の認証情報が未設定）
 
 ## 未決
 - [ ] Slack の DM 検索の 0 件が正しいか確認する

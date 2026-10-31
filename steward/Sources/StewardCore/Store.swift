@@ -33,6 +33,10 @@ public struct Store {
         return d
     }()
 
+    public static func jsonLines(_ items: [Suggestion]) throws -> Data {
+        try encoder.encode(items)
+    }
+
     public func load(now: Date = Date()) throws -> [Suggestion] {
         try locked { Self.wake(try read(), now: now) }
     }
@@ -43,7 +47,20 @@ public struct Store {
             var items = Self.wake(try read(), now: now)
             let result = try body(&items)
             try write(items)
+            var live = Live.load(paths.live)
+            live.pending = items.filter { $0.status == .new }.count
+            live.held = items.filter { $0.status == .snoozed || $0.status == .accepting }.count
+            try live.save(to: paths.live)
             return result
+        }
+    }
+
+    /// live.json の見回り状態を更新する。pending は update が書く。
+    func updateLive(_ body: (inout Live) -> Void) throws {
+        try locked {
+            var live = Live.load(paths.live)
+            body(&live)
+            try live.save(to: paths.live)
         }
     }
 

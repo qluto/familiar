@@ -23,6 +23,7 @@ public struct Paths {
     public var cursor: URL { state.appendingPathComponent("cursor.json") }
     public var log: URL { state.appendingPathComponent("scan.log") }
     public var config: URL { state.appendingPathComponent("config.json") }
+    public var live: URL { state.appendingPathComponent("live.json") }
     public var schedule: URL { state.appendingPathComponent("schedule.json") }
     var lock: URL { state.appendingPathComponent("state.lock") }
     var scanLock: URL { state.appendingPathComponent("scan.lock") }

@@ -4,8 +4,9 @@ public struct AcceptEdits {
     public var title: String?
     public var team: String?
     public var due: String?
-    public init(title: String? = nil, team: String? = nil, due: String? = nil) {
-        self.title = title; self.team = team; self.due = due
+    public var description: String?
+    public init(title: String? = nil, team: String? = nil, due: String? = nil, description: String? = nil) {
+        self.title = title; self.team = team; self.due = due; self.description = description
     }
 }
 
@@ -37,7 +38,7 @@ public struct Acceptor {
         var input: [String: Any] = [
             "team": team,
             "title": edits.title ?? s.draft.linear_draft.title,
-            "description": "\(s.draft.linear_draft.description)\n\n---\n\(s.draft.why)\n\n\(links)",
+            "description": "\(edits.description ?? s.draft.linear_draft.description)\n\n---\n\(s.draft.why)\n\n\(links)",
             "assignee": "me",
             "priority": ["high": 2, "medium": 3, "low": 4][s.draft.urgency] ?? 0,
         ]

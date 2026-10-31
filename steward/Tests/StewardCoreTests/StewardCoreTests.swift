@@ -23,6 +23,17 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     tokyo().date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
 }
 
+@Test func livePendingFollowsDecisions() throws {
+    let paths = tempPaths(), store = Store(paths: paths)
+    let s = try store.merge([draft()])[0]
+    #expect(Live.load(paths.live).pending == 1)
+    try store.transition(s.id) { $0.status = .snoozed; $0.snoozedUntil = Date().addingTimeInterval(60) }
+    #expect(Live.load(paths.live).pending == 0)
+    #expect(Live.load(paths.live).held == 1)
+    try store.transition(s.id) { $0.status = .dismissed }
+    #expect(Live.load(paths.live).held == 0)
+}
+
 @Test func tickRunsOnlyInWorkingHoursAtInterval() {
     let s = Schedule(), monday = at(2026, 11, 2, 10)
     var state = ScheduleState()
@@ -164,4 +175,6 @@ func assistant(_ name: String, _ input: [String: Any] = [:]) -> Event {
     #expect(input["title"] as? String == "直した")
     #expect(input["dueDate"] as? String == "2026-12-01")
     #expect(input["priority"] as? Int == 2)
+    let body = try Acceptor.issueInput(s, edits: AcceptEdits(description: "直した本文"), defaultTeam: "Qluto")
+    #expect((body["description"] as? String)?.hasPrefix("直した本文\n\n---") == true)
 }

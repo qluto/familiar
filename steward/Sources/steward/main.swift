@@ -6,9 +6,9 @@ usage: steward <command>
   scan [--model MODEL]                     見回りを 1 回行う（既定: haiku → sonnet の 2 段。指定時は 1 段）
   tick                                     launchd 用。予定に合えば見回る
   status                                   最後の見回りと当日の使用量
-  list [--all]                             提案の一覧（既定: 判断待ちのみ）
+  list [--all] [--json]                    提案の一覧（既定: 判断待ちのみ）
   show <id>                                提案の詳細
-  accept <id> [--title T] [--team T] [--due YYYY-MM-DD] [--force]
+  accept <id> [--title T] [--team T] [--due YYYY-MM-DD] [--description D] [--force]
   dismiss <id> [理由]
   snooze <id> [時間数]                      既定: 24
 """
@@ -87,6 +87,10 @@ func run() throws {
         let args = try Args(rest, valued: [])
         let items = try store.load()
         let shown = args.flags.contains("--all") ? items : items.filter { $0.status == .new || $0.status == .accepting }
+        if args.flags.contains("--json") {
+            print(String(decoding: try Store.jsonLines(shown), as: UTF8.self))
+            return
+        }
         if shown.isEmpty { print("提案はありません") }
         shown.forEach(printRow)
     case "show":
@@ -99,8 +103,9 @@ func run() throws {
         print("Linear 下書き: \(d.title)（team: \(d.team ?? "-"), due: \(d.due ?? "-")）\n\(d.description)")
         if let url = s.linearUrl { print("Linear: \(url)") }
     case "accept":
-        let args = try Args(rest, valued: ["--title", "--team", "--due"])
-        let edits = AcceptEdits(title: args.options["--title"], team: args.options["--team"], due: args.options["--due"])
+        let args = try Args(rest, valued: ["--title", "--team", "--due", "--description"])
+        let edits = AcceptEdits(title: args.options["--title"], team: args.options["--team"], due: args.options["--due"],
+                                description: args.options["--description"])
         print(try Acceptor(paths: paths).accept(id: args.id(), edits: edits, force: args.flags.contains("--force")))
     case "dismiss":
         let args = try Args(rest, valued: [])

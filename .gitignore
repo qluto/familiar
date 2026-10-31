@@ -3,3 +3,4 @@
 target/
 *.log
 .build/
+app/src-tauri/gen/
