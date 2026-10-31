@@ -64,7 +64,7 @@ public struct Acceptor {
     }
 
     public func accept(id: String, edits: AcceptEdits, force: Bool = false) throws -> String {
-        let config = (try? Data(contentsOf: paths.config)).flatMap { try? JSONDecoder().decode(Config.self, from: $0) }
+        let config = Config.load(paths)
         var input: [String: Any] = [:]
         // 先に accepting へ移し、二重採用で issue が重複しないようにする
         try store.transition(id) { s in

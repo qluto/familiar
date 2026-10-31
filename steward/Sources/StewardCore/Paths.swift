@@ -23,9 +23,20 @@ public struct Paths {
     public var cursor: URL { state.appendingPathComponent("cursor.json") }
     public var log: URL { state.appendingPathComponent("scan.log") }
     public var config: URL { state.appendingPathComponent("config.json") }
+    public var schedule: URL { state.appendingPathComponent("schedule.json") }
     var lock: URL { state.appendingPathComponent("state.lock") }
+    var scanLock: URL { state.appendingPathComponent("scan.lock") }
 }
 
 public struct Config: Codable {
     public var linearTeam: String?
+    public var intervalMinutes: Int?
+    public var startHour: Int?
+    public var endHour: Int?
+    public var weekdays: [Int]?
+    public var meetingLeadMinutes: Int?
+
+    public static func load(_ paths: Paths) -> Config? {
+        (try? Data(contentsOf: paths.config)).flatMap { try? JSONDecoder().decode(Config.self, from: $0) }
+    }
 }

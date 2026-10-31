@@ -41,7 +41,14 @@ public struct Draft: Codable, Equatable {
 
 public struct ScanOutput: Codable, Equatable {
     public var coverage: [Coverage]
+    public var upcoming_events: [String]
     public var suggestions: [Draft]
+
+    /// 読めない時刻は捨てる。予定の取得に失敗しても見回り自体は成立させる。
+    public var upcomingDates: [Date] {
+        let f = ISO8601DateFormatter()
+        return upcoming_events.compactMap { f.date(from: $0) }.sorted()
+    }
 }
 
 public struct Suggestion: Codable, Equatable {

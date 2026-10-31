@@ -4,11 +4,13 @@ public enum StewardError: Error, CustomStringConvertible {
     case notFound(String)
     case invalidState(String)
     case failed(String)
+    case violation(String)
 
     public var description: String {
         switch self {
         case .notFound(let id): return "提案 \(id) が見つかりません"
         case .invalidState(let m), .failed(let m): return m
+        case .violation(let m): return "権限の照合で停止しました: \(m)"
         }
     }
 }
@@ -59,6 +61,12 @@ public struct Store {
             items += added
             return added
         }
+    }
+
+    /// すでに出した提案と出典が重ならない候補だけを返す。
+    public func unseen(_ drafts: [Draft], now: Date = Date()) throws -> [Draft] {
+        let known = Set(try load(now: now).flatMap(\.dedupeKeys))
+        return drafts.filter { known.isDisjoint(with: Dedupe.keys(for: $0.sources)) }
     }
 
     public func transition(_ id: String, now: Date = Date(), _ body: (inout Suggestion) throws -> Void) throws {

@@ -3,7 +3,9 @@ import StewardCore
 
 let usage = """
 usage: steward <command>
-  scan [--model MODEL]                     見回りを 1 回行う（既定: sonnet）
+  scan [--model MODEL]                     見回りを 1 回行う（既定: haiku → sonnet の 2 段。指定時は 1 段）
+  tick                                     launchd 用。予定に合えば見回る
+  status                                   最後の見回りと当日の使用量
   list [--all]                             提案の一覧（既定: 判断待ちのみ）
   show <id>                                提案の詳細
   accept <id> [--title T] [--team T] [--due YYYY-MM-DD] [--force]
@@ -40,6 +42,12 @@ func printRow(_ s: Suggestion) {
     print("\(s.id)  [\(s.status.rawValue)] \(s.draft.urgency)  \(s.draft.title)")
 }
 
+func printReport(_ report: ScanReport) {
+    for c in report.coverage where c.status != "ok" { print("! \(c.source) \(c.status): \(c.note)") }
+    print("新しい提案 \(report.added.count) 件")
+    report.added.forEach(printRow)
+}
+
 func run() throws {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else { print(usage); return }
@@ -50,10 +58,31 @@ func run() throws {
     switch command {
     case "scan":
         let args = try Args(rest, valued: ["--model"])
-        let report = try Scanner(paths: paths).scan(model: args.options["--model"] ?? "sonnet")
-        for c in report.coverage where c.status != "ok" { print("! \(c.source) \(c.status): \(c.note)") }
-        print("新しい提案 \(report.added.count) 件")
-        report.added.forEach(printRow)
+        let scanner = Scanner(paths: paths)
+        let model = args.options["--model"]
+        guard let report = try scanner.scan(triage: model ?? "haiku", refine: model == nil ? "sonnet" : nil) else {
+            print("別の見回りが実行中です")
+            return
+        }
+        printReport(report)
+    case "tick":
+        if let (trigger, report) = try Scanner(paths: paths).tick(triage: "haiku", refine: "sonnet") {
+            print("tick: \(trigger.rawValue)")
+            printReport(report)
+        }
+    case "status":
+        let state = ScheduleState.load(paths.schedule)
+        let f = ISO8601DateFormatter()
+        f.timeZone = .current
+        let show = { (d: Date?) in d.map(f.string(from:)) ?? "-" }
+        print("最終試行: \(show(state.lastAttempt))\n最終成功: \(show(state.lastSuccess))")
+        if let e = state.lastError { print("直近のエラー: \(e)") }
+        print("今後の予定（他の参加者あり）: \(state.upcoming.count) 件")
+        let open = try store.load().filter { $0.status == .new }.count
+        print("判断待ちの提案: \(open) 件")
+        let log = (try? String(contentsOf: paths.log, encoding: .utf8)) ?? ""
+        let usage = Scanner.todayUsage(logText: log)
+        print("今日の見回り: \(usage.runs) 回 / 換算 $\(String(format: "%.3f", usage.usd))")
     case "list":
         let args = try Args(rest, valued: [])
         let items = try store.load()

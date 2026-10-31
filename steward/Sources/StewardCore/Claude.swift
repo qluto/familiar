@@ -122,9 +122,11 @@ public struct ClaudeRunner {
 extension RunOutcome {
     init(exitCode: Int32) { self.init(exitCode: exitCode, result: nil, violation: nil) }
 
+    var cost: Double { result?["total_cost_usd"] as? Double ?? 0 }
+
     /// 成功した実行の structured_output を取り出す。
     func structured<T: Decodable>(_ type: T.Type) throws -> T {
-        if let violation { throw StewardError.failed("権限の照合で停止しました: \(violation)") }
+        if let violation { throw StewardError.violation(violation) }
         guard exitCode == 0, let result, result["is_error"] as? Bool != true,
               let output = result["structured_output"] else {
             let detail = (result?["subtype"] as? String) ?? "結果なし"

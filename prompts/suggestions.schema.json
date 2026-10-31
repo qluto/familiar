@@ -3,6 +3,7 @@
   "additionalProperties": false,
   "required": [
     "coverage",
+    "upcoming_events",
     "suggestions"
   ],
   "properties": {
@@ -153,6 +154,12 @@
             "maximum": 1
           }
         }
+      }
+    },
+    "upcoming_events": {
+      "type": "array",
+      "items": {
+        "type": "string"
       }
     }
   }

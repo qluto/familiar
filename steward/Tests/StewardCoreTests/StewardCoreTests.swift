@@ -13,6 +13,64 @@ func tempPaths() -> Paths {
     return Paths(state: dir, prompts: dir)
 }
 
+func tokyo() -> Calendar {
+    var c = Calendar(identifier: .gregorian)
+    c.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+    return c
+}
+
+func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
+    tokyo().date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
+}
+
+@Test func tickRunsOnlyInWorkingHoursAtInterval() {
+    let s = Schedule(), monday = at(2026, 11, 2, 10)
+    var state = ScheduleState()
+    #expect(s.decide(now: monday, state: state, calendar: tokyo()) == .interval)
+    state.lastAttempt = monday.addingTimeInterval(-20 * 60)
+    #expect(s.decide(now: monday, state: state, calendar: tokyo()) == nil)
+    state.lastAttempt = monday.addingTimeInterval(-30 * 60 + 10)  // launchd のずれ
+    #expect(s.decide(now: monday, state: state, calendar: tokyo()) == .interval)
+    #expect(s.decide(now: at(2026, 11, 2, 20), state: ScheduleState(), calendar: tokyo()) == nil)
+    #expect(s.decide(now: at(2026, 10, 31, 10), state: ScheduleState(), calendar: tokyo()) == nil)  // 土曜
+}
+
+@Test func meetingTriggersOnceEvenOutsideHours() {
+    let s = Schedule(), saturday = at(2026, 10, 31, 21)
+    var state = ScheduleState()
+    state.lastAttempt = saturday
+    state.upcoming = [saturday.addingTimeInterval(20 * 60)]
+    #expect(s.decide(now: saturday, state: state, calendar: tokyo()) == .meeting)
+    state.triggered = state.upcoming
+    #expect(s.decide(now: saturday, state: state, calendar: tokyo()) == nil)
+    state.triggered = []
+    state.upcoming = [saturday.addingTimeInterval(40 * 60)]
+    #expect(s.decide(now: saturday, state: state, calendar: tokyo()) == nil)
+}
+
+@Test func unseenDropsKnownSourcesOnly() throws {
+    let store = Store(paths: tempPaths())
+    try store.merge([draft()])
+    let fresh = draft("new", url: "https://example.com/b")
+    #expect(try store.unseen([draft("again"), fresh]) == [fresh])
+}
+
+@Test func upcomingSkipsUnreadableDates() {
+    let out = ScanOutput(coverage: [], upcoming_events: ["2026-11-02T10:00:00+09:00", "明日"], suggestions: [])
+    #expect(out.upcomingDates == [at(2026, 11, 2, 10)])
+}
+
+@Test func usageCountsOnlyTodaysSuccessfulRuns() {
+    let now = at(2026, 11, 2, 12)
+    let log = """
+    2026-11-02T01:00:00Z ok model=haiku ms=1 usd=0.5 returned=0
+    2026-11-02T01:30:00Z error boom
+    2026-11-01T01:00:00Z ok model=haiku ms=1 usd=9
+    """
+    let usage = Scanner.todayUsage(logText: log, now: now, calendar: tokyo())
+    #expect(usage.runs == 1 && usage.usd == 0.5)
+}
+
 @Test func gmailKeyIgnoresMessagePart() {
     let a = "https://mail.google.com/mail/?authuser=x@gmail.com#all/thread-f:1880332009637039257"
     #expect(Dedupe.normalize(a) == Dedupe.normalize(a + "|msg-f:1880332009637039257"))
