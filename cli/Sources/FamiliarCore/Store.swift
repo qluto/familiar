@@ -4,13 +4,11 @@ public enum FamiliarError: Error, CustomStringConvertible {
     case notFound(String)
     case invalidState(String)
     case failed(String)
-    case violation(String)
 
     public var description: String {
         switch self {
         case .notFound(let id): return "提案 \(id) が見つかりません"
         case .invalidState(let m), .failed(let m): return m
-        case .violation(let m): return "権限の照合で停止しました: \(m)"
         }
     }
 }

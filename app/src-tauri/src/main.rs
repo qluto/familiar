@@ -349,6 +349,17 @@ async fn familiar(args: Vec<String>) -> Result<String, String> {
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Opens sources.md and output.md, creating them from the bundled defaults first.
+#[tauri::command]
+async fn open_instructions() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let out = Command::new(familiar_bin()).arg("instructions").output().map_err(|e| e.to_string())?;
+        if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).into_owned()); }
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        Command::new("open").arg("-t").args(text.lines()).status().map(|_| ()).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
+}
+
 /// Only web links leave the app. Suggestion URLs come from untrusted mail and pages.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -420,7 +431,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_instructions])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());

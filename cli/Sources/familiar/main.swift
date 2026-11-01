@@ -8,7 +8,8 @@ usage: familiar <command>
   status                                   最後の見回りと当日の使用量
   list [--all] [--json]                    提案の一覧（既定: 判断待ちのみ）
   show <id>                                提案の詳細
-  accept <id> [--title T] [--team T] [--due YYYY-MM-DD] [--description D] [--force]
+  accept <id> [--note 指示] [--force]       output.md に従って実行する。指示や質問への返事を添えられる
+  instructions                             sources.md と output.md の場所を表示する
   dismiss <id> [理由]
   snooze <id> [時間数]                      既定: 24
 """
@@ -99,14 +100,16 @@ func run() throws {
         printRow(s)
         print("なぜ: \(s.draft.why)")
         for src in s.draft.sources { print("出典 [\(src.kind)] \(src.url)\n  \(src.excerpt)") }
-        let d = s.draft.linear_draft
-        print("Linear 下書き: \(d.title)（team: \(d.team ?? "-"), due: \(d.due ?? "-")）\n\(d.description)")
-        if let url = s.linearUrl { print("Linear: \(url)") }
+        print("内容: \(s.draft.details)（期日: \(s.draft.due ?? "-")）")
+        if let q = s.question { print("確認: \(q)") }
+        if let url = s.resultUrl { print("結果: \(url)") }
     case "accept":
-        let args = try Args(rest, valued: ["--title", "--team", "--due", "--description"])
-        let edits = AcceptEdits(title: args.options["--title"], team: args.options["--team"], due: args.options["--due"],
-                                description: args.options["--description"])
-        print(try Acceptor(paths: paths).accept(id: args.id(), edits: edits, force: args.flags.contains("--force")))
+        let args = try Args(rest, valued: ["--note"])
+        print(try Acceptor(paths: paths).accept(id: args.id(), note: args.options["--note"], force: args.flags.contains("--force")))
+    case "instructions":
+        _ = try paths.instruction("sources.md")
+        _ = try paths.instruction("output.md")
+        paths.instructions.forEach { print($0.path) }
     case "dismiss":
         let args = try Args(rest, valued: [])
         let reason = args.positional.dropFirst().joined(separator: " ")

@@ -14,27 +14,13 @@ function el(tag, props = {}, ...children) {
   n.append(...children);
   return n;
 }
-function field(label, value, attrs = {}, tag = "input") {
-  const input = el(tag, { value: value ?? "", ...attrs });
-  return [el("label", {}, label, input), input];
-}
-
-// 入力欄は内容に合わせて伸ばし、吹き出しもそれに合わせる
-function grow(area) {
-  area.style.height = "auto";
-  area.style.height = `${area.scrollHeight}px`;
-}
-
 function card(s) {
-  const d = s.draft, l = d.linear_draft;
+  const d = s.draft;
   const note = el("div", { className: "note" });
-  const [titleField, title] = field("タイトル", l.title);
-  const [teamField, team] = field("チーム（空なら既定）", l.team);
-  const [dueField, due] = field("期日", l.due, { type: "date" });
-  const [bodyField, body] = field("本文", l.description, {}, "textarea");
-  body.addEventListener("input", () => { grow(body); fit(); });
-  const [reasonField, reason] = field("却下の理由（任意）", "");
-
+  const instruction = el("input", {
+    placeholder: s.question ? "返事を書いて「採用」" : "AI への指示（任意）例: 金曜までにして",
+    ariaLabel: "AI への指示",
+  });
   const buttons = [];
   const act = async (args, after) => {
     buttons.forEach((b) => (b.disabled = true));
@@ -47,45 +33,33 @@ function card(s) {
     }
   };
   const remove = () => { reload().catch(showError); };
+  const text = () => instruction.value.trim();
   const accept = el("button", { className: "go", textContent: "採用" });
   accept.onclick = () => {
-    const args = ["accept", s.id];
-    if (title.value.trim() !== l.title) args.push("--title", title.value.trim());
-    if (team.value.trim()) args.push("--team", team.value.trim());
-    if (due.value) args.push("--due", due.value);
-    if (body.value.trim() && body.value !== l.description) args.push("--description", body.value);
-    accept.textContent = "作成中…";
-    act(args, remove).finally(() => (accept.textContent = "採用"));
+    accept.textContent = "お願いしています…";
+    act(["accept", s.id, ...(text() ? ["--note", text()] : [])], remove).finally(() => (accept.textContent = "採用"));
   };
   const snooze = el("button", { textContent: "後で", onclick: () => act(["snooze", s.id], remove) });
-  const dismiss = el("button", {
-    textContent: "却下",
-    onclick: () => act(["dismiss", s.id, ...(reason.value.trim() ? [reason.value.trim()] : [])], remove),
-  });
+  const dismiss = el("button", { textContent: "却下", onclick: () => act(["dismiss", s.id, ...(text() ? [text()] : [])], remove) });
   buttons.push(accept, snooze, dismiss);
 
   const sources = el("div", { className: "src" }, ...d.sources.map((src) => el("div", {},
     el("button", { textContent: `${src.kind} を開く`, onclick: () => core.invoke("open_url", { url: src.url }) }),
     el("blockquote", { textContent: src.excerpt }))));
-  const draft = el("details", {}, el("summary", { textContent: "Linear の下書きを直す" }),
-    el("div", { className: "form" }, titleField, bodyField, el("div", { className: "two" }, teamField, dueField), reasonField));
-  draft.addEventListener("toggle", async () => {
-    if (draft.open) grow(body); // 閉じている間は高さを測れない
-    await fit();
-    if (draft.open) draft.scrollIntoView({ block: "nearest" });
-  });
-  const node = el("article", {},
+  return el("article", {},
     el("h2", { textContent: d.title }),
     el("div", { className: "meta" },
       el("span", { className: d.urgency === "high" ? "high" : "", textContent: `緊急度 ${d.urgency}` }),
       ` ・ ${d.kind} ・ 手間 ${d.effort}`,
+      d.due ? ` ・ 期日 ${d.due}` : "",
       s.snoozedUntil ? ` ・ ${new Date(s.snoozedUntil).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })} にまた声をかけます` : ""),
     el("p", { textContent: d.why }),
+    el("p", { className: "details", textContent: d.details }),
     sources,
-    draft,
+    ...(s.question ? [el("p", { className: "question", textContent: s.question })] : []),
+    instruction,
     el("div", { className: "actions" }, accept, snooze, dismiss),
     note);
-  return node;
 }
 
 // 窓は透明なので、内容の高さに合わせる。余った透明部分がクリックを奪わないように。
@@ -118,9 +92,5 @@ async function reload() {
   return fit();
 }
 
-let qa = "";
-core.invoke("qa_flags").then((f) => (qa = f));
 const syncDisplay = async () => document.body.classList.toggle("notch", (await core.invoke("display")).mode === "notch");
-event.listen("panel-open", () => syncDisplay().then(reload).then(() => {
-  if (qa.includes("paneldraft")) document.querySelector("details").open = true; // 実機で下書きを開く計測用
-}).catch(showError));
+event.listen("panel-open", () => syncDisplay().then(reload).catch(showError));

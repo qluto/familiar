@@ -14,13 +14,6 @@ public struct Source: Codable, Equatable {
     public var excerpt: String
 }
 
-public struct LinearDraft: Codable, Equatable {
-    public var team: String?
-    public var title: String
-    public var description: String
-    public var due: String?
-}
-
 public struct Coverage: Codable, Equatable {
     public var source: String
     public var status: String
@@ -35,8 +28,26 @@ public struct Draft: Codable, Equatable {
     public var urgency: String
     public var effort: String
     public var kind: String
-    public var linear_draft: LinearDraft
+    public var details: String
+    public var due: String?
     public var confidence: Double
+}
+
+extension Draft {
+    private enum LegacyKeys: CodingKey { case linear_draft }
+    private struct Legacy: Decodable { var description: String; var due: String? }
+
+    /// 以前の提案は Linear 用の linear_draft に本文と期日を持っていた。
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self).decodeIfPresent(Legacy.self, forKey: .linear_draft)
+        self.init(title: try c.decode(String.self, forKey: .title), why: try c.decode(String.self, forKey: .why),
+                  sources: try c.decode([Source].self, forKey: .sources), urgency: try c.decode(String.self, forKey: .urgency),
+                  effort: try c.decode(String.self, forKey: .effort), kind: try c.decode(String.self, forKey: .kind),
+                  details: try c.decodeIfPresent(String.self, forKey: .details) ?? legacy?.description ?? "",
+                  due: try c.decodeIfPresent(String.self, forKey: .due) ?? legacy?.due,
+                  confidence: try c.decode(Double.self, forKey: .confidence))
+    }
 }
 
 public struct ScanOutput: Codable, Equatable {
@@ -60,7 +71,16 @@ public struct Suggestion: Codable, Equatable {
     public var updatedAt: Date
     public var snoozedUntil: Date?
     public var dismissReason: String?
-    public var linearUrl: String?
+    public var resultUrl: String?
+    /// エージェントが返事を待っている質問。
+    public var question: String?
+    /// 指示と質問のやり取り。採用をやり直すときに渡す。
+    public var dialog: [String]?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, dialog
+        case resultUrl = "linearUrl" // 保存済みの提案と同じキーのまま読む
+    }
 
     public init(draft: Draft, now: Date) {
         let keys = Dedupe.keys(for: draft.sources)

@@ -2,7 +2,7 @@
 
 身の回りを見回り、「タスクにした方がよさそうなこと」を教えてくれる macOS の常駐マスコット。
 
-Claude Code のコネクタ（Slack / Gmail / Google Calendar / Notion / GitHub / Linear）を読み取り専用で見回ります。提案は吹き出しで届き、採用すると Linear に issue を作ります。
+Claude Code のコネクタ（既定は Slack / Gmail / Google Calendar / Notion / GitHub / Linear）を見回ります。提案は吹き出しで届き、採用すると指示どおりの処理を AI エージェントが行います（既定は Linear に issue を作成）。見回る先と採用時の動きは `~/.local/state/familiar/` の `sources.md` と `output.md` に日本語で書いて変えられます。権限は Claude Code の設定と許可済みの MCP に従います。守りたい方針は `output.md` に書いてください。
 
 - **読むだけ:** 見回りのプロセスは書き込みツールを持ちません。外部に書き込むのは、人が採用した確定済みの値だけです
 - **キャラクターは差し替え可能:** 同梱のデフォルトのほか、[キャラクターパック](docs/character-pack.md)を[自分で作れます](app/packs/README.md)

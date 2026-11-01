@@ -1,14 +1,12 @@
 import Foundation
 
-public let scanSources = ["gmail", "slack", "calendar", "notion", "github", "linear"]
-
 public struct ScanReport {
     public var added: [Suggestion]
     public var coverage: [Coverage]
     public var upcoming: [Date]
 }
 
-/// 読み取り専用の見回り。提案の保存と cursor の更新だけを行い、外部へは何も書かない。
+/// 見回り。何を見るかは sources.md に従い、提案の保存と cursor の更新を行う。
 public struct Scanner {
     let paths: Paths
     let store: Store
@@ -76,21 +74,16 @@ public struct Scanner {
 
     private func runStages(triage: String, refine: String?, now: Date) throws -> ScanReport {
         let prompts = paths.prompts
-        let allowed = try ToolPolicy.list(prompts.appendingPathComponent("allowed-tools.txt"))
-        let denied = try ToolPolicy.list(prompts.appendingPathComponent("denied-tools.txt"))
         let schema = try String(contentsOf: prompts.appendingPathComponent("suggestions.schema.json"), encoding: .utf8)
-        let allowedSet = Set(allowed)
         func stage(_ model: String, _ prompt: String) throws -> (ScanOutput, RunOutcome) {
-            let args = ClaudeRunner.baseArguments(model: model, schema: schema, maxTurns: 40, budget: "2",
-                                                  allowed: allowed, denied: denied)
-            let outcome = try runner.run(prompt: prompt, arguments: args, cwd: paths.state) {
-                ToolPolicy.violation(in: $0, allowed: allowedSet)
-            }
+            let args = ClaudeRunner.baseArguments(model: model, schema: schema, maxTurns: 40, budget: "2")
+            let outcome = try runner.run(prompt: prompt, arguments: args, cwd: paths.state)
             return (try outcome.structured(ScanOutput.self), outcome)
         }
 
         let cursor = Self.loadCursor(paths.cursor)
-        let base = try String(contentsOf: prompts.appendingPathComponent("scan.md"), encoding: .utf8)
+        let rules = try String(contentsOf: prompts.appendingPathComponent("scan.md"), encoding: .utf8)
+        let base = rules + "\n" + (try paths.instruction("sources.md"))
         let started = Date()
         let (first, firstRun) = try stage(triage, Self.prompt(base: base, cursor: cursor, known: store.load(now: now), now: now))
         var cost = firstRun.cost
@@ -105,9 +98,8 @@ public struct Scanner {
                 drafts = second.suggestions
                 cost += secondRun.cost
                 note += "+\(refine)"
-            } catch let error as FamiliarError {
-                // 権限違反は握りつぶさない。それ以外の精査の失敗では、見回りの候補をそのまま残す
-                if case .violation = error { throw error }
+            } catch {
+                // 精査に失敗しても、見回りの候補は残す
                 log("refine failed, keep triage drafts: \(error)", now: now)
             }
         }
@@ -138,12 +130,11 @@ public struct Scanner {
         let f = ISO8601DateFormatter()
         f.timeZone = .current
         f.formatOptions = [.withInternetDateTime]
-        let windows = scanSources.map { source -> String in
-            // 進まない情報源（Notion は常に partial）の期間が伸び続けないよう、7 日で打ち切る
-            let oldest = now.addingTimeInterval(-7 * 24 * 3600)
-            let since = max(cursor[source] ?? now.addingTimeInterval(-24 * 3600), oldest)
-            return "- \(source): \(f.string(from: since)) 以降"
-        }.joined(separator: "\n")
+        // 進まない情報源（Notion は常に partial）の期間が伸び続けないよう、7 日で打ち切る
+        let oldest = now.addingTimeInterval(-7 * 24 * 3600)
+        let first = now.addingTimeInterval(-24 * 3600)
+        let seen = cursor.sorted { $0.key < $1.key }.map { "- \($0.key): \(f.string(from: max($0.value, oldest))) 以降" }
+        let windows = (seen + ["- ここにない情報源: \(f.string(from: first)) 以降"]).joined(separator: "\n")
         var text = base + "\n## 期間\n現在: \(f.string(from: now))\n\(windows)\n"
         // 却下・採用したものも 30 日は見せ、言い換えた同じ提案を避ける
         let recent = known.filter { $0.status.isOpen || now.timeIntervalSince($0.updatedAt) < 30 * 24 * 3600 }

@@ -5,7 +5,7 @@ import Testing
 func draft(_ title: String = "t", url: String = "https://example.com/a") -> Draft {
     Draft(title: title, why: "w", sources: [Source(kind: "gmail", url: url, excerpt: "e")],
           urgency: "high", effort: "small", kind: "other",
-          linear_draft: LinearDraft(team: nil, title: title, description: "d", due: nil), confidence: 0.5)
+          details: "d", due: nil, confidence: 0.5)
 }
 
 func tempPaths() -> Paths {
@@ -137,53 +137,66 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     #expect(!text.contains("1970"))
 }
 
-func assistant(_ name: String, _ input: [String: Any] = [:]) -> Event {
-    ["type": "assistant", "message": ["content": [["type": "tool_use", "name": name, "input": input]]]]
+@Test func promptListsSourcesFromTheCursorNotAFixedSet() {
+    let text = Scanner.prompt(base: "", cursor: ["figma": Date()], known: [], now: Date())
+    #expect(text.contains("- figma:") && text.contains("ここにない情報源") && !text.contains("gmail"))
 }
 
-@Test func policyStopsToolsOutsideAllowlist() {
-    let allowed: Set<String> = ["mcp__x__read"]
-    #expect(ToolPolicy.violation(in: assistant("mcp__x__read"), allowed: allowed) == nil)
-    #expect(ToolPolicy.violation(in: assistant("ToolSearch"), allowed: allowed) == nil)
-    #expect(ToolPolicy.violation(in: assistant("mcp__x__send"), allowed: allowed) != nil)
-    let initEvent: Event = ["type": "system", "subtype": "init", "tools": ["ToolSearch", "mcp__x__send"]]
-    #expect(ToolPolicy.violation(in: initEvent, allowed: allowed) != nil)
+@Test func oldDraftsKeepTheirTextAndDue() throws {
+    let line = #"{"title":"t","why":"w","sources":[],"urgency":"low","effort":"small","kind":"other","confidence":0.5,"linear_draft":{"team":"Q","title":"t","description":"本文","due":"2026-11-07"}}"#
+    let d = try JSONDecoder().decode(Draft.self, from: Data(line.utf8))
+    #expect(d.details == "本文" && d.due == "2026-11-07")
 }
 
-@Test func writeGuardRejectsUpdateChangedValueAndSecondCall() {
-    let tool = Acceptor.writeTool
-    let expected: [String: Any] = ["team": "Q", "title": "T", "priority": 2]
-    var calls = 0
-    #expect(Acceptor.writeViolation(in: assistant(tool, expected), expected: expected, calls: &calls) == nil)
-    #expect(Acceptor.writeViolation(in: assistant(tool, expected), expected: expected, calls: &calls) != nil)
-    calls = 0
-    #expect(Acceptor.writeViolation(in: assistant(tool, expected.merging(["id": "QLU-5"]) { a, _ in a }),
-                                    expected: expected, calls: &calls) != nil)
-    calls = 0
-    #expect(Acceptor.writeViolation(in: assistant(tool, ["team": "Q", "title": "X", "priority": 2]),
-                                    expected: expected, calls: &calls) != nil)
-    calls = 0
-    #expect(Acceptor.writeViolation(in: assistant("mcp__claude_ai_Gmail__send_message"),
-                                    expected: expected, calls: &calls) != nil)
+@Test func instructionsSeedOnceAndKeepUserEdits() throws {
+    let dir = tempPaths().state
+    let paths = Paths(state: dir.appendingPathComponent("state"), prompts: dir)
+    try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
+    try "既定\n".write(to: paths.prompts.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    try #"{"linearTeam":"Qluto"}"#.write(to: paths.config, atomically: true, encoding: .utf8)
+    #expect(try paths.instruction("output.md").contains("Qluto"))
+    try "自分の指示".write(to: paths.prompts.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    try "書き換えた".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    #expect(try paths.instruction("output.md") == "書き換えた")
 }
 
-@Test func writeGuardAcceptsSameValuesAfterJSONRoundTrip() throws {
-    let s = Suggestion(draft: draft("日本語\nのタイトル"), now: Date())
-    let expected = try Acceptor.issueInput(s, edits: AcceptEdits(due: "2026-11-07"), defaultTeam: "Qluto")
-    let sent = try JSONSerialization.jsonObject(with: JSONSerialization.data(withJSONObject: expected)) as! [String: Any]
-    var calls = 0
-    #expect(Acceptor.writeViolation(in: assistant(Acceptor.writeTool, sent), expected: expected, calls: &calls) == nil)
+struct FakeAgent: AgentRun {
+    var output: [String: Any]?
+    func run(prompt: String, schema: String) throws -> RunOutcome {
+        guard let output else { throw FamiliarError.failed("落ちた") }
+        return RunOutcome(exitCode: 0, result: ["structured_output": output])
+    }
 }
 
-@Test func issueInputNeedsTeamAndAppliesEdits() throws {
-    var d = draft()
-    d.linear_draft.due = "2026-11-01"
-    let s = Suggestion(draft: d, now: Date())
-    #expect(throws: FamiliarError.self) { try Acceptor.issueInput(s, edits: AcceptEdits(), defaultTeam: nil) }
-    let input = try Acceptor.issueInput(s, edits: AcceptEdits(title: "直した", due: "2026-12-01"), defaultTeam: "Qluto")
-    #expect(input["title"] as? String == "直した")
-    #expect(input["dueDate"] as? String == "2026-12-01")
-    #expect(input["priority"] as? Int == 2)
-    let body = try Acceptor.issueInput(s, edits: AcceptEdits(description: "直した本文"), defaultTeam: "Qluto")
-    #expect((body["description"] as? String)?.hasPrefix("直した本文\n\n---") == true)
+func acceptFixture(_ agent: FakeAgent) throws -> (Acceptor, Store, String) {
+    let paths = tempPaths()
+    let store = Store(paths: paths)
+    let added = try store.merge([draft()])
+    try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
+    try "Linear に作る".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    return (Acceptor(paths: paths, agent: agent), store, added[0].id)
+}
+
+@Test func doneStoresTheResult() throws {
+    let (acceptor, store, id) = try acceptFixture(FakeAgent(output: ["status": "done", "message": "作った", "url": "https://x.test/1"]))
+    #expect(try acceptor.accept(id: id, note: nil) == "https://x.test/1")
+    let s = try store.load()[0]
+    #expect(s.status == .accepted && s.resultUrl == "https://x.test/1")
+}
+
+@Test func questionWaitsForAReplyAndIsKeptForTheNextRun() throws {
+    let (acceptor, store, id) = try acceptFixture(FakeAgent(output: ["status": "needs_input", "message": "どのチーム？", "url": NSNull()]))
+    _ = try acceptor.accept(id: id, note: "急ぎで")
+    let s = try store.load()[0]
+    #expect(s.status == .new && s.question == "どのチーム？")
+    #expect(s.dialog == ["あなた: 急ぎで", "エージェント: どのチーム？"])
+    let prompt = try Acceptor.prompt(instructions: "x", suggestion: s)
+    #expect(prompt.contains("急ぎで") && prompt.contains("どのチーム？") && prompt.contains("信頼できない"))
+}
+
+@Test func failureReturnsToTheHumanWithAWarning() throws {
+    let (acceptor, store, id) = try acceptFixture(FakeAgent(output: nil))
+    #expect(throws: FamiliarError.self) { try acceptor.accept(id: id, note: nil) }
+    let s = try store.load()[0]
+    #expect(s.status == .new && s.question?.contains("途中まで") == true)
 }
