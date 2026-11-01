@@ -87,9 +87,35 @@ async function play(n) {
     };
     v.onended = () => finish();
     req = v.requestVideoFrameCallback(tick);
-    v.play().catch((e) => finish("play failed " + e));
+    v.play().catch((e) => {
+      if (e.name !== "NotAllowedError") return finish("play failed " + e);
+      // 低電力モードの WebKit はミュート動画の自動再生も拒む。シークは許されるので、描くコマへ順に飛んで描く
+      live = false; clearTimeout(guard); v.cancelVideoFrameCallback(req);
+      if (!seekMode) { seekMode = true; log("autoplay blocked, seeking instead"); }
+      step(n).then(done);
+    });
   });
   release();
+}
+let seekMode = false;
+async function step(n) {
+  const v = video, { frames, draw: keep } = meta[n];
+  const marks = [...new Set([...keep, frames - 1])].sort((a, b) => a - b); // 最後のコマ＝ハブの絵を必ず残す
+  const start = performance.now();
+  for (let i = 0; i < marks.length; i++) {
+    const due = start + (marks[i] / 24) * 1000;
+    if (i < marks.length - 1 && performance.now() > start + (marks[i + 1] / 24) * 1000) continue; // 遅れたら飛ばす
+    const late = due - performance.now();
+    if (late > 0) await new Promise((r) => setTimeout(r, late));
+    const ok = await new Promise((r) => {
+      const t = setTimeout(() => r(false), 2000);
+      v.onseeked = () => { clearTimeout(t); r(true); };
+      v.currentTime = (marks[i] + 0.5) / 24;
+    });
+    v.onseeked = null;
+    if (!ok) { log(`seek timeout ${n}`); return; }
+    draw(v);
+  }
 }
 
 // ── 行動 ─────────────────────────
