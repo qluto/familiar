@@ -6,7 +6,7 @@ public struct ScanReport {
     public var upcoming: [Date]
 }
 
-/// 見回り。何を見るかは sources.md に従い、提案の保存と cursor の更新を行う。
+/// 見回り。何を見るかは HEARTBEAT.md に従い、提案の保存と cursor の更新を行う。
 public struct Scanner {
     let paths: Paths
     let store: Store
@@ -83,7 +83,8 @@ public struct Scanner {
 
         let cursor = Self.loadCursor(paths.cursor)
         let rules = try String(contentsOf: prompts.appendingPathComponent("scan.md"), encoding: .utf8)
-        let base = rules + "\n" + (try paths.instruction("sources.md"))
+        let workspace = Workspace(paths: paths)
+        let base = rules + "\n" + (try workspace.read("HEARTBEAT.md")) + workspace.context(now: now)
         let started = Date()
         let (first, firstRun) = try stage(triage, Self.prompt(base: base, cursor: cursor, known: store.load(now: now), now: now))
         var cost = firstRun.cost
@@ -94,7 +95,7 @@ public struct Scanner {
         if let refine, !candidates.isEmpty {
             do {
                 let instructions = try String(contentsOf: prompts.appendingPathComponent("refine.md"), encoding: .utf8)
-                let (second, secondRun) = try stage(refine, Self.refinePrompt(base: instructions, candidates: candidates))
+                let (second, secondRun) = try stage(refine, Self.refinePrompt(base: instructions + workspace.context(now: now), candidates: candidates))
                 drafts = second.suggestions
                 cost += secondRun.cost
                 note += "+\(refine)"

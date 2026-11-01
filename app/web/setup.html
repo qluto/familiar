@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>対話で設定</title>
+<link rel="stylesheet" href="sheet.css">
+<style>
+#m{display:flex;flex-direction:column;gap:10px}
+#log{height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
+.line{white-space:pre-wrap;line-height:1.6;max-width:90%;user-select:text;-webkit-user-select:text}
+.you{align-self:flex-end;background:var(--tint);border-radius:10px;padding:5px 10px}
+.wait{color:var(--sub)}
+.error{color:var(--warn)}
+form{display:flex;gap:6px;align-items:center}
+input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:6px 9px;flex:1;min-width:0}
+form button,#again{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
+#send{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+#again{justify-self:start;align-self:flex-start;font-size:12px;color:var(--sub)}
+</style></head>
+<body><div id="b">
+<header><span>対話で設定</span><button id="close" class="icon" aria-label="閉じる">×</button></header>
+<main id="m">
+  <div id="log" role="log"></div>
+  <form id="f"><input id="text" aria-label="返事" autocomplete="off"><button id="send">送る</button></form>
+  <button id="again">最初からやり直す</button>
+</main>
+<svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
+</div><script src="setup.js"></script></body></html>

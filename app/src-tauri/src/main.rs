@@ -286,9 +286,25 @@ fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     app.emit("settings-open", ())
 }
 
+/// Opens the conversation with the agent in the spot the settings bubble uses.
+#[tauri::command]
+fn show_setup(app: AppHandle) -> Result<(), String> {
+    let show = || -> tauri::Result<()> {
+        let panel = app.get_webview_window("panel").unwrap();
+        if panel.is_visible()? {
+            panel.hide()?;
+            app.emit("panel-closed", ())?;
+        }
+        app.get_webview_window("settings").unwrap().hide()?;
+        app.emit("setup-open", ())
+    };
+    show().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn hide_settings(app: AppHandle) -> Result<(), String> {
     app.get_webview_window("settings").unwrap().hide().map_err(|e| e.to_string())?;
+    app.get_webview_window("setup").unwrap().hide().map_err(|e| e.to_string())?;
     app.emit("settings-closed", ()).map_err(|e| e.to_string())
 }
 
@@ -335,7 +351,7 @@ fn live() -> String {
 /// Runs the familiar CLI. Accepting takes seconds, so this stays off the main thread.
 #[tauri::command]
 async fn familiar(args: Vec<String>) -> Result<String, String> {
-    const ALLOWED: [&str; 4] = ["list", "accept", "dismiss", "snooze"];
+    const ALLOWED: [&str; 5] = ["list", "accept", "dismiss", "snooze", "setup"];
     if !args.first().is_some_and(|c| ALLOWED.contains(&c.as_str())) {
         return Err("command not allowed".into());
     }
@@ -349,14 +365,14 @@ async fn familiar(args: Vec<String>) -> Result<String, String> {
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Opens sources.md and output.md, creating them from the bundled defaults first.
+/// Opens the folder that holds the instruction and memory files, creating it first.
 #[tauri::command]
-async fn open_instructions() -> Result<(), String> {
+async fn open_workspace() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let out = Command::new(familiar_bin()).arg("instructions").output().map_err(|e| e.to_string())?;
+        let out = Command::new(familiar_bin()).arg("workspace").output().map_err(|e| e.to_string())?;
         if !out.status.success() { return Err(String::from_utf8_lossy(&out.stderr).into_owned()); }
-        let text = String::from_utf8_lossy(&out.stdout).into_owned();
-        Command::new("open").arg("-t").args(text.lines()).status().map(|_| ()).map_err(|e| e.to_string())
+        let dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        Command::new("open").arg(dir).status().map(|_| ()).map_err(|e| e.to_string())
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -431,7 +447,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_instructions])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, show_setup])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
@@ -454,17 +470,20 @@ fn main() {
             float(&app.get_webview_window("notch").unwrap(), Some(NOTCH_LEVEL), false)?;
             float(&app.get_webview_window("panel").unwrap(), None, true)?;
             float(&app.get_webview_window("settings").unwrap(), None, true)?;
+            float(&app.get_webview_window("setup").unwrap(), None, true)?;
 
             let bubble = app.get_webview_window("bubble").unwrap();
             bubble.set_ignore_cursor_events(true)?;
             let panel = app.get_webview_window("panel").unwrap();
             let settings = app.get_webview_window("settings").unwrap();
+            let setup = app.get_webview_window("setup").unwrap();
             let main = win.clone();
             win.on_window_event(move |e| {
                 if let WindowEvent::Moved(_) = e {
                     let _ = place_bubble(&main, &bubble);
                     let _ = place_bubble(&main, &panel);
                     let _ = place_bubble(&main, &settings);
+                    let _ = place_bubble(&main, &setup);
                 }
             });
             Ok(())

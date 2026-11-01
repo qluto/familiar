@@ -8,8 +8,10 @@ usage: familiar <command>
   status                                   最後の見回りと当日の使用量
   list [--all] [--json]                    提案の一覧（既定: 判断待ちのみ）
   show <id>                                提案の詳細
-  accept <id> [--note 指示] [--force]       output.md に従って実行する。指示や質問への返事を添えられる
-  instructions                             sources.md と output.md の場所を表示する
+  accept <id> [--note 指示] [--force]       OUTPUT.md に従って実行する。指示や質問への返事を添えられる
+  workspace                                記憶と指示の置き場を用意して表示する
+  setup status|log|reset|say [言葉]         AI との対話で指示と記憶を整える
+  dream [--force]                          最近の判断を長期記憶へ整理する
   dismiss <id> [理由]
   snooze <id> [時間数]                      既定: 24
 """
@@ -71,6 +73,11 @@ func run() throws {
             print("tick: \(trigger.rawValue)")
             printReport(report)
         }
+        do {
+            if let summary = try Dreamer(paths: paths).dream() { print("記憶を整理しました: \(summary)") }
+        } catch {
+            FileHandle.standardError.write(Data("dream: \(error)\n".utf8))
+        }
     case "status":
         let state = ScheduleState.load(paths.schedule)
         let f = ISO8601DateFormatter()
@@ -106,28 +113,46 @@ func run() throws {
     case "accept":
         let args = try Args(rest, valued: ["--note"])
         print(try Acceptor(paths: paths).accept(id: args.id(), note: args.options["--note"], force: args.flags.contains("--force")))
-    case "instructions":
-        _ = try paths.instruction("sources.md")
-        _ = try paths.instruction("output.md")
-        paths.instructions.forEach { print($0.path) }
+    case "workspace":
+        let workspace = Workspace(paths: paths)
+        try workspace.prepare()
+        print(workspace.dir.path)
+    case "setup":
+        let setup = Setup(paths: paths)
+        switch rest.first {
+        case "status": print(try setup.needed() ? "needed" : "done")
+        case "log": print(String(decoding: try JSONEncoder().encode(setup.log()), as: UTF8.self))
+        case "reset": try setup.reset()
+        case "say": print(String(decoding: try JSONEncoder().encode(setup.say(rest.dropFirst().first)), as: UTF8.self))
+        default: throw FamiliarError.invalidState(usage)
+        }
+    case "dream":
+        let args = try Args(rest, valued: [])
+        print(try Dreamer(paths: paths).dream(force: args.flags.contains("--force")) ?? "整理することはありません")
     case "dismiss":
         let args = try Args(rest, valued: [])
         let reason = args.positional.dropFirst().joined(separator: " ")
+        var decided: Suggestion?
         try store.transition(try args.id()) { s in
             guard s.status.isOpen else { throw FamiliarError.invalidState("\(s.id) は \(s.status.rawValue) です") }
             s.status = .dismissed
             s.dismissReason = reason.isEmpty ? nil : reason
+            decided = s
         }
+        if let decided { try Workspace(paths: paths).record("却下", decided, detail: reason) }
     case "snooze":
         let args = try Args(rest, valued: [])
         guard let hours = Double(args.positional.dropFirst().first ?? "24"), hours > 0 else {
             throw FamiliarError.invalidState("時間数が正しくありません")
         }
+        var decided: Suggestion?
         try store.transition(try args.id()) { s in
             guard s.status.isOpen else { throw FamiliarError.invalidState("\(s.id) は \(s.status.rawValue) です") }
             s.status = .snoozed
             s.snoozedUntil = Date().addingTimeInterval(hours * 3600)
+            decided = s
         }
+        if let decided { try Workspace(paths: paths).record("後で", decided) }
     default:
         print(usage)
         exit(2)

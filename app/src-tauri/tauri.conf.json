@@ -88,6 +88,21 @@
         "shadow": false,
         "visible": false,
         "visibleOnAllWorkspaces": true
+      },
+      {
+        "label": "setup",
+        "title": "対話で設定",
+        "url": "setup.html",
+        "width": 500,
+        "height": 460,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "visibleOnAllWorkspaces": true
       }
     ],
     "security": {

@@ -6,7 +6,8 @@
     "bubble",
     "panel",
     "settings",
-    "notch"
+    "notch",
+    "setup"
   ],
   "permissions": [
     "core:default",

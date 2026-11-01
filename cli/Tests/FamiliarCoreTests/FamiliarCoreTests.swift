@@ -148,16 +148,127 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     #expect(d.details == "本文" && d.due == "2026-11-07")
 }
 
-@Test func instructionsSeedOnceAndKeepUserEdits() throws {
+func workspacePaths() throws -> Paths {
     let dir = tempPaths().state
     let paths = Paths(state: dir.appendingPathComponent("state"), prompts: dir)
     try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
-    try "既定\n".write(to: paths.prompts.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    return paths
+}
+
+@Test func workspaceSeedsOnceAndKeepsUserEdits() throws {
+    let paths = try workspacePaths()
+    try "既定\n".write(to: paths.prompts.appendingPathComponent("OUTPUT.md"), atomically: true, encoding: .utf8)
     try #"{"linearTeam":"Qluto"}"#.write(to: paths.config, atomically: true, encoding: .utf8)
-    #expect(try paths.instruction("output.md").contains("Qluto"))
-    try "自分の指示".write(to: paths.prompts.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
-    try "書き換えた".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
-    #expect(try paths.instruction("output.md") == "書き換えた")
+    let workspace = Workspace(paths: paths)
+    #expect(try workspace.read("OUTPUT.md").contains("Qluto"))
+    try "書き換えた".write(to: workspace.file("OUTPUT.md"), atomically: true, encoding: .utf8)
+    #expect(try workspace.read("OUTPUT.md") == "書き換えた")
+}
+
+@Test func workspaceTakesOverEarlierInstructionFiles() throws {
+    let paths = try workspacePaths()
+    try "前の指示".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    #expect(try Workspace(paths: paths).read("OUTPUT.md") == "前の指示")
+}
+
+@Test func decisionsReachTheNextRunsContext() throws {
+    let workspace = Workspace(paths: try workspacePaths())
+    let s = Suggestion(draft: draft("請求書"), now: Date())
+    try workspace.record("却下", s, detail: "経理が見るので\n不要")
+    let context = workspace.context()
+    #expect(context.contains("却下「請求書」") && context.contains("経理が見るので 不要"))
+}
+
+struct DreamFake: AgentRun {
+    var output: [String: Any]
+    func run(prompt: String, schema: String) throws -> RunOutcome {
+        RunOutcome(exitCode: 0, result: ["structured_output": output])
+    }
+}
+
+@Test func dreamWaitsForEnoughDecisionsAndRunsOncePerDay() throws {
+    let paths = try workspacePaths()
+    let workspace = Workspace(paths: paths)
+    let dreamer = Dreamer(paths: paths, agent: DreamFake(output: ["user": "U", "memory": "M", "summary": "覚えた"]))
+    try "".write(to: paths.prompts.appendingPathComponent("dream.md"), atomically: true, encoding: .utf8)
+    try "前のU".write(to: paths.prompts.appendingPathComponent("USER.md"), atomically: true, encoding: .utf8)
+    let s = Suggestion(draft: draft(), now: Date())
+    let now = at(2026, 11, 2, 10)
+    try workspace.record("却下", s, now: now.addingTimeInterval(-120))
+    #expect(try dreamer.dream(now: now) == nil)
+    try workspace.record("却下", s, now: now.addingTimeInterval(-120))
+    try workspace.record("採用", s, now: now.addingTimeInterval(-120))
+    #expect(try dreamer.dream(now: now) == "覚えた")
+    #expect(try workspace.read("MEMORY.md") == "M" && workspace.read("USER.md") == "U")
+    #expect(try workspace.read("memory/previous-USER.md") == "前のU")
+    #expect(try workspace.read("DREAMS.md").contains("覚えた"))
+    try workspace.record("却下", s, now: now.addingTimeInterval(60))
+    try workspace.record("却下", s, now: now.addingTimeInterval(60))
+    try workspace.record("却下", s, now: now.addingTimeInterval(60))
+    #expect(try dreamer.dream(now: now.addingTimeInterval(3600)) == nil)
+}
+
+@Test func dreamKeepsMemoryWhenTheResultIsTooLong() throws {
+    let paths = try workspacePaths()
+    let workspace = Workspace(paths: paths)
+    try "".write(to: paths.prompts.appendingPathComponent("dream.md"), atomically: true, encoding: .utf8)
+    try "残す".write(to: paths.prompts.appendingPathComponent("USER.md"), atomically: true, encoding: .utf8)
+    try workspace.record("却下", Suggestion(draft: draft(), now: Date()))
+    let long = String(repeating: "あ", count: Workspace.userLimit + 1)
+    let dreamer = Dreamer(paths: paths, agent: DreamFake(output: ["user": long, "memory": "", "summary": ""]))
+    #expect(throws: FamiliarError.self) { try dreamer.dream(force: true) }
+    #expect(try workspace.read("USER.md") == "残す")
+}
+
+struct SetupFake: AgentRun {
+    var turn: [String: Any]
+    func run(prompt: String, schema: String) throws -> RunOutcome {
+        RunOutcome(exitCode: 0, result: ["structured_output": turn])
+    }
+}
+
+func setupFixture(_ turn: [String: Any]) throws -> (Setup, Workspace) {
+    let paths = try workspacePaths()
+    try "ルール".write(to: paths.prompts.appendingPathComponent("BOOTSTRAP.md"), atomically: true, encoding: .utf8)
+    try "前の魂".write(to: paths.prompts.appendingPathComponent("SOUL.md"), atomically: true, encoding: .utf8)
+    return (Setup(paths: paths, agent: SetupFake(turn: turn)), Workspace(paths: paths))
+}
+
+let noFiles: [String: Any] = ["soul": NSNull(), "user": NSNull(), "heartbeat": NSNull(), "output": NSNull(), "memory": NSNull()]
+
+@Test func setupKeepsTheConversationUntilDone() throws {
+    let (setup, workspace) = try setupFixture(["message": "お仕事は？", "done": false, "files": noFiles])
+    #expect(try setup.needed())
+    #expect(try setup.say(nil).done == false)
+    _ = try setup.say("開発者です")
+    #expect(setup.log().map(\.text) == ["お仕事は？", "開発者です", "お仕事は？"])
+    #expect(try setup.prompt(lines: setup.log()).contains("開発者です"))
+    #expect(try setup.needed())
+    #expect(!FileManager.default.fileExists(atPath: workspace.file("USER.md").path))
+}
+
+@Test func setupWritesOnlyChangedFilesAndFinishes() throws {
+    var files = noFiles
+    files["user"] = "開発者"
+    let (setup, workspace) = try setupFixture(["message": "保存します", "done": true, "files": files])
+    try workspace.prepare()
+    #expect(try setup.say("はい").done)
+    #expect(try workspace.read("USER.md") == "開発者" && workspace.read("SOUL.md") == "前の魂")
+    #expect(try !setup.needed() && setup.log().isEmpty)
+}
+
+@Test func setupRejectsAnOverlongFileAndKeepsTheConversation() throws {
+    var files = noFiles
+    files["user"] = String(repeating: "あ", count: Workspace.userLimit + 1)
+    let (setup, workspace) = try setupFixture(["message": "保存します", "done": true, "files": files])
+    #expect(throws: FamiliarError.self) { try setup.say("はい") }
+    #expect(try !FileManager.default.fileExists(atPath: workspace.file("USER.md").path) && setup.needed())
+}
+
+@Test func existingWorkspacesAreNotAskedToOnboard() throws {
+    let paths = try workspacePaths()
+    try "前の指示".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    #expect(try !Setup(paths: paths).needed())
 }
 
 struct FakeAgent: AgentRun {
@@ -172,8 +283,9 @@ func acceptFixture(_ agent: FakeAgent) throws -> (Acceptor, Store, String) {
     let paths = tempPaths()
     let store = Store(paths: paths)
     let added = try store.merge([draft()])
-    try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
-    try "Linear に作る".write(to: paths.state.appendingPathComponent("output.md"), atomically: true, encoding: .utf8)
+    let workspace = Workspace(paths: paths)
+    try workspace.prepare()
+    try "Linear に作る".write(to: workspace.file("OUTPUT.md"), atomically: true, encoding: .utf8)
     return (Acceptor(paths: paths, agent: agent), store, added[0].id)
 }
 

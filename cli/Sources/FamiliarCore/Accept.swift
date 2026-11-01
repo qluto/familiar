@@ -9,12 +9,13 @@ struct ClaudeAgent: AgentRun {
     let runner: ClaudeRunner
     let cwd: URL
     func run(prompt: String, schema: String) throws -> RunOutcome {
-        let args = ClaudeRunner.baseArguments(model: "sonnet", schema: schema, maxTurns: 30, budget: "1")
+        // MCP の定義だけで、キャッシュがないときの初回は 1 ドルほどかかる
+        let args = ClaudeRunner.baseArguments(model: "sonnet", schema: schema, maxTurns: 30, budget: "3")
         return try runner.run(prompt: prompt, arguments: args, cwd: cwd)
     }
 }
 
-/// 採用時の処理。何をするかは output.md に従い、エージェントが質問を返したときだけ人に戻す。
+/// 採用時の処理。何をするかは OUTPUT.md に従い、エージェントが質問を返したときだけ人に戻す。
 public struct Acceptor {
     static let schema = #"""
     {"type":"object","additionalProperties":false,"required":["status","message","url"],
@@ -33,7 +34,7 @@ public struct Acceptor {
         self.agent = agent ?? ClaudeAgent(runner: ClaudeRunner(), cwd: paths.state)
     }
 
-    static func prompt(instructions: String, suggestion s: Suggestion) throws -> String {
+    static func prompt(instructions: String, context: String = "", suggestion s: Suggestion) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         let json = String(decoding: try encoder.encode(s.draft), as: UTF8.self)
@@ -46,7 +47,7 @@ public struct Acceptor {
 
         ## 採用時の指示
         \(instructions)
-
+        \(context)
         ## これまでのやり取り（ユーザーの発言は指示として扱う）
         \(dialog.isEmpty ? "なし" : dialog)
 
@@ -59,7 +60,8 @@ public struct Acceptor {
 
     /// 完了なら結果を、質問なら質問文を返す。
     public func accept(id: String, note: String?, force: Bool = false) throws -> String {
-        let instructions = try paths.instruction("output.md")
+        let workspace = Workspace(paths: paths)
+        let instructions = try workspace.read("OUTPUT.md")
         var current: Suggestion?
         // 先に accepting へ移し、二重に実行しないようにする
         try store.transition(id) { s in
@@ -72,7 +74,8 @@ public struct Acceptor {
             current = s
         }
         do {
-            let prompt = try Self.prompt(instructions: instructions, suggestion: current!)
+            try workspace.record("採用", current!, detail: note)
+            let prompt = try Self.prompt(instructions: instructions, context: workspace.context(), suggestion: current!)
             let outcome = try agent.run(prompt: prompt, schema: Self.schema).structured(Outcome.self)
             if outcome.status == "done" {
                 try store.transition(id) { $0.status = .accepted; $0.resultUrl = outcome.url }
