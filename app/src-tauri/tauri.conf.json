@@ -58,6 +58,23 @@
         "visibleOnAllWorkspaces": true
       },
       {
+        "label": "notch",
+        "title": "notch",
+        "url": "notch.html",
+        "width": 320,
+        "height": 38,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "focus": false,
+        "acceptFirstMouse": true,
+        "visible": false,
+        "visibleOnAllWorkspaces": true
+      },
+      {
         "label": "settings",
         "title": "familiar の設定",
         "url": "settings.html",

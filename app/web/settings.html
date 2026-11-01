@@ -13,6 +13,8 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
 .keys button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #note{margin:8px 0 6px;font-size:12px;color:var(--sub)}
 #note.error{color:var(--warn)}
+.hint{margin:8px 0 6px;font-size:12px;color:var(--sub)}
+.keys button.selected{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
 </style></head>
 <body><div id="b">
 <header><span>設定</span><button id="close" class="icon" aria-label="閉じる">×</button></header>
@@ -24,6 +26,14 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
       <span class="keys"><button id="record"></button><button id="reset">元に戻す</button></span>
     </div>
     <p id="note" role="status"></p>
+  </section>
+  <section aria-labelledby="h-display">
+    <h3 id="h-display">表示</h3>
+    <div class="row">
+      <span class="name">知らせ方</span>
+      <span class="keys"><button id="character">キャラクター</button><button id="notch">ノッチ</button></span>
+    </div>
+    <p id="display-note" class="hint"></p>
   </section>
 </main>
 <svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>

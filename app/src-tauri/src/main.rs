@@ -6,7 +6,7 @@ use serde_json::{json, Map, Value};
 use tauri::{
     ipc::Response,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow, WindowEvent,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -14,6 +14,8 @@ const BUBBLE_OVERLAP: f64 = 73.0; // logical px the bubble overlaps the mascot w
 const BUBBLE_GAP: f64 = 12.0; // logical px between the bubble and the bottom screen edge
 const PANEL_WIDTH: f64 = 500.0;
 const DEFAULT_HOTKEY: &str = "Control+Alt+Space";
+const NOTCH_WING: f64 = 52.0; // logical px shown on each side of the notch
+const NOTCH_LEVEL: isize = 27; // above the menu bar (24) and status items (25)
 
 fn home() -> PathBuf { PathBuf::from(std::env::var("HOME").unwrap_or_default()) }
 
@@ -203,6 +205,75 @@ fn context_menu(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     build().map_err(|e| e.to_string())
 }
 
+/// The notch in top-left logical coordinates.
+#[derive(Clone, Copy)]
+struct NotchRect { x: f64, y: f64, width: f64, height: f64 }
+
+fn notch_rect() -> Option<NotchRect> {
+    let mtm = objc2::MainThreadMarker::new()?;
+    let screens = objc2_app_kit::NSScreen::screens(mtm);
+    let primary_height = screens.iter().next()?.frame().size.height;
+    screens.iter().find_map(|screen| {
+        let height = screen.safeAreaInsets().top;
+        if height <= 0.0 { return None; }
+        let (frame, left, right) = (screen.frame(), screen.auxiliaryTopLeftArea(), screen.auxiliaryTopRightArea());
+        let start = left.origin.x + left.size.width;
+        Some(NotchRect {
+            x: frame.origin.x + start,
+            y: primary_height - frame.origin.y - frame.size.height,
+            width: right.origin.x - start,
+            height,
+        })
+    })
+}
+
+/// "notch" only when a screen has one, so a closed lid or a desktop falls back to the character.
+fn display_mode() -> &'static str {
+    let wanted = read_config().ok().and_then(|c| c.get("display")?.as_str().map(|m| m == "notch")).unwrap_or(false);
+    if wanted && notch_rect().is_some() { "notch" } else { "character" }
+}
+
+#[tauri::command]
+fn display() -> Value { json!({ "mode": display_mode(), "hasNotch": notch_rect().is_some() }) }
+
+#[tauri::command]
+fn set_display(app: AppHandle, mode: String) -> Result<Value, String> {
+    if mode != "character" && mode != "notch" { return Err("invalid display".into()); }
+    save_config("display", json!(mode))?;
+    let (main, notch) = (app.get_webview_window("main").unwrap(), app.get_webview_window("notch").unwrap());
+    let result = if display_mode() == "notch" { main.hide() } else { notch.hide().and_then(|_| main.show()) };
+    result.map_err(|e| e.to_string())?;
+    let value = display();
+    app.emit("display-changed", &value).map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
+/// Shows the wings around the notch. An empty state hides the window, so the menu bar stays usable.
+#[tauri::command]
+fn notch(app: AppHandle, state: Value) -> Result<(), String> {
+    let win = app.get_webview_window("notch").unwrap();
+    let shown = state.as_object().is_some_and(|s| !s.is_empty());
+    let (true, Some(rect)) = (shown, notch_rect()) else { return win.hide().map_err(|e| e.to_string()) };
+    let apply = || -> tauri::Result<()> {
+        win.set_size(LogicalSize::new(rect.width + NOTCH_WING * 2.0, rect.height))?;
+        win.set_position(LogicalPosition::new(rect.x - NOTCH_WING, rect.y))?;
+        win.emit("notch-state", &state)?;
+        win.show()
+    };
+    apply().map_err(|e| e.to_string())
+}
+
+/// Joins every Space. macOS keeps a window out of full-screen Spaces unless it is marked as auxiliary.
+fn float(win: &WebviewWindow, level: Option<isize>, over_full_screen: bool) -> tauri::Result<()> {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as Behavior};
+    let window = win.ns_window()? as *const NSWindow;
+    let window = unsafe { &*window };
+    if let Some(level) = level { window.setLevel(level); }
+    let spaces = Behavior::CanJoinAllSpaces | Behavior::Stationary | Behavior::IgnoresCycle;
+    window.setCollectionBehavior(if over_full_screen { spaces | Behavior::FullScreenAuxiliary } else { spaces });
+    Ok(())
+}
+
 #[tauri::command]
 fn show_settings(app: AppHandle) -> Result<(), String> { open_settings(&app).map_err(|e| e.to_string()) }
 
@@ -292,6 +363,10 @@ fn place_bubble(main: &WebviewWindow, bubble: &WebviewWindow) -> tauri::Result<(
 /// `size` is passed in because outer_size() still reports the old size right after set_size().
 fn place(main: &WebviewWindow, bubble: &WebviewWindow, size: PhysicalSize<u32>) -> tauri::Result<()> {
     let (pos, scale) = (main.outer_position()?, main.scale_factor()?);
+    if let (true, Some(rect)) = (bubble.label() != "bubble" && display_mode() == "notch", notch_rect()) {
+        let left = rect.x + (rect.width - size.width as f64 / scale) / 2.0;
+        return bubble.set_position(LogicalPosition::new(left, rect.y + rect.height + 6.0));
+    }
     let left = pos.x - size.width as i32 + (BUBBLE_OVERLAP * scale) as i32;
     // Stay on the bottom screen edge even when the mascot is dragged upward.
     let Some(mon) = main.current_monitor()?.or(main.primary_monitor()?) else { return Ok(()) };
@@ -345,7 +420,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
@@ -364,7 +439,10 @@ fn main() {
                 ))?;
             }
             win.set_ignore_cursor_events(true)?;
-            win.show()?;
+            if display_mode() != "notch" { win.show()?; }
+            float(&app.get_webview_window("notch").unwrap(), Some(NOTCH_LEVEL), false)?;
+            float(&app.get_webview_window("panel").unwrap(), None, true)?;
+            float(&app.get_webview_window("settings").unwrap(), None, true)?;
 
             let bubble = app.get_webview_window("bubble").unwrap();
             bubble.set_ignore_cursor_events(true)?;

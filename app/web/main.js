@@ -107,15 +107,17 @@ async function hold() {
     const left = until - now();
     const step = blink ? rnd(2.2, 5.5) : left;
     await wait(Math.min(step, left));
-    if (blink && now() < until && !brain.pending) await play(blink);
+    if (blink && now() < until && !brain.pending && !unseen()) await play(blink);
   }
 }
 async function life() {
   await play("blink");
   if (QA.has("noclips")) return;
   for (;;) {
+    if (unseen()) { await wait(1); continue; } // 見えない間は動画を再生しない
     if (QA.has("panelq") && brain.hub === "Q" && !panelOpen) openPanel(); // 実機でパネルを通す計測用
     await hold();
+    if (unseen()) continue; // 待っている間に見えなくなった
     const n = brain.next(now());
     if (!n) continue;
     log("play " + n);
@@ -158,6 +160,7 @@ function summon() {
   if (engaged) return disengage();
   engage();
   if (hasNews()) openPanel();
+  else if (notchMode) showBubble();
   else { say("はい、今は気になることはありません", ENGAGE_SECONDS); brain.click(); }
   interrupt();
 }
@@ -171,10 +174,13 @@ function applyHotkey({ keys, active }) {
 const POLL_SECONDS = 2;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
 let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };
-let panelOpen = false, settingsOpen = false, lastBubble = null, reply = "";
+let panelOpen = false, settingsOpen = false, lastBubble = null, lastNotch = null, reply = "", notchMode = false;
 const covered = () => panelOpen || settingsOpen; // 大きな吹き出しのどちらかが開いている
+// 全画面アプリの Space には macOS がこの窓を出さず、WebKit はそれをページの非表示として伝える
+const unseen = () => notchMode || document.hidden;
 
 function bubbleText() {
+  if (notchMode) return "";
   if (covered()) return ""; // 大きな吹き出しが開いている間は、そちらが代わりになる
   if (reply) return reply;
   if (live.lastError) return "見回りがうまくいきませんでした";
@@ -183,7 +189,24 @@ function bubbleText() {
   if (live.pending > 0) return fresh;
   return live.held > 0 ? `後回しの件が ${live.held} 件残っています` : "";
 }
+// 空のオブジェクトならノッチの窓を隠す
+function notchState() {
+  const state = {};
+  if (brain.scanning) state.scanning = true;
+  if (live.lastError) state.error = true;
+  if (live.pending > 0) state.count = live.pending;
+  else if (live.held > 0) { state.count = live.held; state.held = true; }
+  if (engaged) state.engaged = true;
+  return state;
+}
+function showNotch() {
+  const state = notchMode ? notchState() : {}, text = JSON.stringify(state);
+  if (text === lastNotch) return;
+  lastNotch = text;
+  tauri?.core.invoke("notch", { state });
+}
 function showBubble() {
+  showNotch();
   const text = bubbleText();
   if (text === lastBubble) return;
   lastBubble = text;
@@ -227,8 +250,16 @@ function startLive() {
     interrupt();
   });
 }
+function applyDisplay({ mode }) {
+  notchMode = mode === "notch";
+  if (notchMode) dim(false);
+  showBubble();
+  interrupt();
+}
 function startSettings() {
   if (!tauri) return;
+  tauri.event.listen("display-changed", ({ payload }) => applyDisplay(payload));
+  tauri.event.listen("notch-click", react);
   tauri.event.listen("settings-open", () => { settingsOpen = true; showBubble(); });
   tauri.event.listen("settings-closed", () => { settingsOpen = false; touched = now(); showBubble(); });
   if (QA.has("settings")) tauri.core.invoke("show_settings"); // 実機で設定を開く計測用
@@ -258,6 +289,7 @@ addEventListener("contextmenu", (e) => { e.preventDefault(); if (tauri) tauri.co
 function startBreathing() {
   // 毎フレーム動かすと WindowServer が 1 コアの 2 割強を使う。量が小さいので 8fps で足りる
   setInterval(() => {
+    if (unseen()) return;
     const k = 0.5 - 0.5 * Math.cos((2 * Math.PI * performance.now()) / 4200);
     canvas.style.transform = `scale(${1 + 0.002 * k},${1 + 0.006 * k})`;
   }, 125);
@@ -279,6 +311,10 @@ function startPolling() {
   const refresh = async () => { [pos, scale] = await Promise.all([w.outerPosition(), w.scaleFactor()]); };
   w.onMoved(refresh); refresh();
   setInterval(async () => {
+    if (unseen()) {
+      if (engaged && !covered() && now() - touched > ENGAGE_SECONDS) disengage();
+      return;
+    }
     if (!pos) return;
     const c = await tauri.window.cursorPosition();
     const x = (c.x - pos.x) / scale, y = (c.y - pos.y) / scale;
@@ -296,6 +332,8 @@ function startPolling() {
 (async () => {
   if (tauri) QA = new Set((await tauri.core.invoke("qa_flags")).split(",").filter(Boolean));
   log("boot " + NAMES.length + " qa=" + [...QA]);
+  if (tauri) notchMode = (await tauri.core.invoke("display")).mode === "notch";
+  document.addEventListener("visibilitychange", () => log("hidden " + document.hidden));
   if (!QA.has("nobreath")) startBreathing();
   if (QA.has("hide")) canvas.style.display = "none";
   if (!QA.has("nopoll")) startPolling();

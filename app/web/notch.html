@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>notch</title>
+<style>
+/* ノッチと同じ黒で左右へ延ばす。上辺は画面の端に接し、下の角だけ丸める */
+:root{--mark:#6f8f62;--paper:#fffdf7;--held:#a8a496;--warn:#ef9a88}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none;-webkit-user-select:none}
+#n{height:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:0 16px;
+  background:#000;border-radius:0 0 14px 14px;color:var(--paper);font:700 14px/1 -apple-system,sans-serif;cursor:default}
+#mark{width:20px;height:20px;border-radius:6px;background:var(--mark);display:flex;align-items:center;justify-content:center;gap:4px}
+#mark i{width:3px;height:8px;border-radius:2px;background:var(--paper)}
+#n.scanning #mark{animation:pulse 1.2s ease-in-out infinite}
+#n.error #mark{background:var(--warn)}
+#n.held #count{color:var(--held)}
+@keyframes pulse{50%{opacity:.35}}
+</style></head>
+<body><div id="n"><span id="mark" aria-hidden="true"><i></i><i></i></span><span id="count"></span></div>
+<script>
+const { core, event } = window.__TAURI__;
+const n = document.getElementById("n"), count = document.getElementById("count");
+event.listen("notch-state", ({ payload: s }) => {
+  count.textContent = s.count ?? "";
+  for (const name of ["scanning", "error", "held"]) n.classList.toggle(name, !!s[name]);
+});
+n.addEventListener("click", () => event.emit("notch-click"));
+addEventListener("contextmenu", (e) => { e.preventDefault(); core.invoke("context_menu"); });
+</script></body></html>

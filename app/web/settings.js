@@ -53,6 +53,17 @@ addEventListener("keydown", (e) => {
   save([...mods, e.code].join("+"));
 });
 addEventListener("blur", cancel);
+const modeButtons = { character: document.getElementById("character"), notch: document.getElementById("notch") };
+const displayNote = document.getElementById("display-note");
+function showDisplay({ mode, hasNotch }) {
+  for (const [name, button] of Object.entries(modeButtons)) button.classList.toggle("selected", name === mode);
+  modeButtons.notch.disabled = !hasNotch;
+  displayNote.textContent = hasNotch ? "ノッチでは、提案の件数を画面上部に出します" : "ノッチのある画面がないので、キャラクターで知らせます";
+  document.body.classList.toggle("notch", mode === "notch");
+}
+for (const [name, button] of Object.entries(modeButtons)) {
+  button.onclick = async () => { showDisplay(await core.invoke("set_display", { mode: name })); await core.invoke("hide_settings"); };
+}
 const fit = () => core.invoke("fit_panel", { height: document.querySelector("header").offsetHeight + main.scrollHeight + 4 });
 event.listen("hotkey-changed", ({ payload }) => { if (!recording) show(payload); });
-event.listen("settings-open", () => refresh().then(fit));
+event.listen("settings-open", () => Promise.all([refresh(), core.invoke("display").then(showDisplay)]).then(fit));

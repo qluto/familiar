@@ -120,6 +120,7 @@ async function reload() {
 
 let qa = "";
 core.invoke("qa_flags").then((f) => (qa = f));
-event.listen("panel-open", () => reload().then(() => {
+const syncDisplay = async () => document.body.classList.toggle("notch", (await core.invoke("display")).mode === "notch");
+event.listen("panel-open", () => syncDisplay().then(reload).then(() => {
   if (qa.includes("paneldraft")) document.querySelector("details").open = true; // 実機で下書きを開く計測用
 }).catch(showError));
