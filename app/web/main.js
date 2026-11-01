@@ -209,8 +209,12 @@ function openPanel() {
 }
 function startLive() {
   if (!tauri) return;
+  const awaySeconds = QA.has("fastaway") ? 5 : Brain.AWAY; // 実機で離席を通す計測用
   const read = async () => {
     try { applyLive(JSON.parse(await tauri.core.invoke("live"))); } catch (e) { log("live " + e); }
+    const away = await tauri.core.invoke("idle_seconds") >= awaySeconds;
+    if (brain.setAway(away) && brain.hub === "B") { brain.click(); interrupt(); } // 戻ったらすぐ振り向く
+    else if (away && brain.hub === "F") interrupt();
   };
   read();
   setInterval(read, POLL_SECONDS * 1000);

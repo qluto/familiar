@@ -243,6 +243,19 @@ fn pack_file(id: String, name: String) -> Result<Response, String> {
     fs::read(packs_dir().join(id).join("clips").join(name)).map(Response::new).map_err(|e| e.to_string())
 }
 
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+}
+
+/// Seconds since the last keyboard or mouse input. Needs no permission and reads no input.
+#[tauri::command]
+fn idle_seconds() -> f64 {
+    const COMBINED_SESSION_STATE: i32 = 0;
+    const ANY_INPUT_EVENT: u32 = u32::MAX;
+    unsafe { CGEventSourceSecondsSinceLastEventType(COMBINED_SESSION_STATE, ANY_INPUT_EVENT) }
+}
+
 #[tauri::command]
 fn live() -> String {
     std::fs::read_to_string(state_dir().join("live.json")).unwrap_or_else(|_| "{}".into())
@@ -332,7 +345,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());

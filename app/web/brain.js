@@ -12,19 +12,29 @@
   };
   const HOLD = { F: [4, 9], B: [4, 14], T: [0.8, 2.5], I: [0.8, 0.8], Q: [3, 7] }; // 秒
   const BLINK = { F: "blink", T: "blink_t", Q: "blink_q" };
+  // 伸びは時刻で、背中向きは離席で決まるので、ここには入れない
   const ACT = {
-    F: [["idle_f", 5], ["look", 3], ["turn_away", 1.5], ["stretch", 1]],
-    B: [["idle_b", 4], ["turn_back", 3]],
+    F: [["idle_f", 5], ["look", 3]],
+    B: [["idle_b", 1]],
   };
-  const COOL = { idle_f: 12, idle_b: 8, look: 40, stretch: 180, turn_away: 90, turn_back: 15 };
+  const COOL = { idle_f: 12, idle_b: 8, look: 40 };
   const WAITS = 12;      // 返事を待つループ回数。1 回あたり約 8 秒で、約 1.5 分待つ
   const REMIND = 20 * 60; // 放置された提案へ声をかけ直す間隔（秒）
+  const AWAY = 10 * 60;   // この秒数だけ入力がなければ離席とみなし、背を向ける
+  const STRETCH_LATE = 2; // 合図で遅れた伸びを、毎時 25 分と 55 分から何分後まで許すか
+
+  /** 伸びの時間帯なら、その回を表す分単位の時刻を返す。 */
+  function stretchSlot(date) {
+    const late = date.getMinutes() % 30 - 25;
+    return late >= 0 && late < STRETCH_LATE ? Math.floor(date.getTime() / 60000) - late : null;
+  }
 
   class Brain {
     constructor(rand = Math.random) {
       this.rand = rand; this.hub = "F"; this.pending = false;
       this.last = {}; this.loops = 0; this.prevThink = null;
       this.scanning = false; this.found = false; this.waiting = 0; this.panel = false; this.asked = -1e9;
+      this.away = false; this.stretched = null;
     }
     click() { this.pending = true; }
     /** familiar の状態を受け取る。クリップの途中でも呼んでよく、次のハブで反映する。 */
@@ -33,18 +43,23 @@
     }
     /** 見回りが新しい提案を見つけた。次に T へ着いたとき閃く。 */
     discover() { this.found = true; }
+    /** 離席の状態を受け取る。戻ったかどうかは呼び出し側が見られるよう返す。 */
+    setAway(away) { const back = this.away && !away; this.away = away; return back; }
     /** 今のハブから出られるクリップを選ぶ。合図を優先し、クリックは必ずここで解決する。 */
-    next(now) {
+    next(now, date = new Date()) {
       const hub = this.hub;
       if (hub === "I") return this.use(this.waiting > 0 ? "idea_ask" : "idea_out", now);
       if (hub === "Q") return this.use(this.nextAsk(), now);
       if (hub === "T") return this.use(this.nextThink(), now);
-      if (hub === "B" && this.needsFront()) { this.pending = false; return this.use("turn_back", now); }
+      if (hub === "B" && (!this.away || this.needsFront())) { this.pending = false; return this.use("turn_back", now); }
       if (hub === "F") {
         if (this.scanning || this.found) { this.pending = false; return this.use("think_in", now); }
         if (this.waiting > 0 && (this.panel || now - this.asked > REMIND)) { this.pending = false; return this.use("ask_in", now); }
+        if (this.away && !this.needsFront()) { this.pending = false; return this.use("turn_away", now); }
       }
       if (this.pending) { this.pending = false; return this.use(hub === "F" ? "look" : "turn_back", now); }
+      const slot = hub === "F" ? stretchSlot(date) : null;
+      if (slot !== null && slot !== this.stretched) { this.stretched = slot; return this.use("stretch", now); }
       const c = ACT[hub].filter(([n]) => now - (this.last[n] ?? -1e9) > COOL[n]);
       if (!c.length) return null;
       let r = this.rand() * c.reduce((s, x) => s + x[1], 0);
@@ -75,5 +90,5 @@
       if (n === "ask_in" || n === "idea_ask") { this.loops = WAITS; this.asked = now; }
     }
   }
-  g.Brain = { Brain, GRAPH, HOLD, BLINK, ACT, COOL, WAITS, REMIND };
+  g.Brain = { Brain, GRAPH, HOLD, BLINK, ACT, COOL, WAITS, REMIND, AWAY, stretchSlot };
 })(globalThis);
