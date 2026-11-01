@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>設定</title>
+<link rel="stylesheet" href="sheet.css">
+<style>
+body{user-select:none;-webkit-user-select:none}
+h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.name{font-size:14px;font-weight:600}
+.keys{display:flex;gap:6px}
+.keys button{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
+#record{min-width:132px;font-weight:600}
+#record.on{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.keys button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#note{margin:8px 0 6px;font-size:12px;color:var(--sub)}
+#note.error{color:var(--warn)}
+</style></head>
+<body><div id="b">
+<header><span>設定</span><button id="close" class="icon" aria-label="閉じる">×</button></header>
+<main id="m">
+  <section aria-labelledby="h-call">
+    <h3 id="h-call">呼びかけ</h3>
+    <div class="row">
+      <span class="name">ホットキー</span>
+      <span class="keys"><button id="record"></button><button id="reset">元に戻す</button></span>
+    </div>
+    <p id="note" role="status"></p>
+  </section>
+</main>
+<svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
+</div><script src="hotkey.js"></script><script src="settings.js"></script></body></html>

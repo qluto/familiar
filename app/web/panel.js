@@ -4,6 +4,7 @@ const main = document.getElementById("m");
 const heading = document.getElementById("h");
 const close = () => core.invoke("hide_panel");
 document.getElementById("close").onclick = close;
+document.getElementById("settings").onclick = () => core.invoke("show_settings");
 addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 const familiar = (...args) => core.invoke("familiar", { args });
 

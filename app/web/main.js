@@ -127,22 +127,56 @@ async function life() {
 function interrupt() {
   if (brain.hub !== "I") { clearTimeout(timer); wake(); } // ひらめきの決めポーズは短く見せ切る
 }
+const hasNews = () => live.pending > 0 || live.held > 0 || live.lastError;
 function react() {
   log("clicked at hub " + brain.hub);
   if (panelOpen) tauri?.core.invoke("hide_panel");
-  else if (live.pending > 0 || live.held > 0 || live.lastError) openPanel();
+  else if (hasNews()) openPanel();
   else brain.click();
   interrupt();
+}
+
+// ── 待機と応答 ───────────────────
+// 待機中はクリックを下のウィンドウへ通し、カーソルが重なると薄くなる。応答はホットキーで始まる。
+const ENGAGE_SECONDS = 10, UNDIM_SECONDS = 0.3, SAY_SECONDS = 8;
+let engaged = false, hotkeyWorks = true, touched = 0, sayTimer = 0;
+// ホットキーがなければ、触れないと何もできなくなる。大きな吹き出しの間は前面の窓がキーを持ち、
+// 背後のキャラクターへのクリックは WebKit が横取りするので受けない。閉じるのは ×、Esc、ホットキー
+const clickable = () => (engaged && !covered()) || !hotkeyWorks;
+
+function say(text, seconds = SAY_SECONDS) {
+  clearTimeout(sayTimer);
+  reply = text;
+  showBubble();
+  if (text) sayTimer = setTimeout(() => say(""), seconds * 1000);
+}
+function engage() { engaged = true; touched = now(); dim(false); }
+function disengage() { engaged = false; say(""); }
+function summon() {
+  log("hotkey at hub " + brain.hub);
+  if (covered()) { engaged = false; return void tauri.core.invoke(panelOpen ? "hide_panel" : "hide_settings"); }
+  if (engaged) return disengage();
+  engage();
+  if (hasNews()) openPanel();
+  else { say("はい、今は気になることはありません", ENGAGE_SECONDS); brain.click(); }
+  interrupt();
+}
+function applyHotkey({ keys, active }) {
+  hotkeyWorks = active;
+  if (!active) say("ホットキーを使えませんでした。右クリックの設定から変更できます");
+  return keys;
 }
 
 // ── familiar の状態 ─────────────────
 const POLL_SECONDS = 2;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
 let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };
-let panelOpen = false, lastBubble = null;
+let panelOpen = false, settingsOpen = false, lastBubble = null, reply = "";
+const covered = () => panelOpen || settingsOpen; // 大きな吹き出しのどちらかが開いている
 
 function bubbleText() {
-  if (panelOpen) return ""; // 大きな吹き出しが開いている間は、そちらが代わりになる
+  if (covered()) return ""; // 大きな吹き出しが開いている間は、そちらが代わりになる
+  if (reply) return reply;
   if (live.lastError) return "見回りがうまくいきませんでした";
   const fresh = `気になることが ${live.pending} 件あります`;
   if (live.pending > 0 && live.held > 0) return `${fresh}。\n後回しの件も ${live.held} 件残っています`;
@@ -183,9 +217,24 @@ function startLive() {
   tauri.event.listen("panel-closed", () => {
     panelOpen = false;
     brain.sync({ scanning: brain.scanning, waiting: live.pending, panel: false });
+    // 保留が残っていても右クリックできるよう、× や Esc で閉じたあとも応答を続ける
+    touched = now();
     showBubble();
     interrupt();
   });
+}
+function startSettings() {
+  if (!tauri) return;
+  tauri.event.listen("settings-open", () => { settingsOpen = true; showBubble(); });
+  tauri.event.listen("settings-closed", () => { settingsOpen = false; touched = now(); showBubble(); });
+  if (QA.has("settings")) tauri.core.invoke("show_settings"); // 実機で設定を開く計測用
+}
+async function startHotkey() {
+  if (!tauri) return;
+  tauri.event.listen("hotkey", summon);
+  tauri.event.listen("hotkey-changed", ({ payload }) => applyHotkey(payload));
+  const keys = applyHotkey(await tauri.core.invoke("hotkey"));
+  if (hotkeyWorks && await tauri.core.invoke("first_run")) say(`${hotkeyLabel(keys)} で呼んでください`, 15);
 }
 
 // ── 入力: 描かれた画素の上だけ受ける ─────────
@@ -201,7 +250,7 @@ canvas.addEventListener("mousedown", (e) => {
   if (e.button === 0) { downAt = e.timeStamp; if (tauri) setTimeout(() => { if (downAt) tauri.window.getCurrentWindow().startDragging(); }, 160); }
 });
 canvas.addEventListener("mouseup", (e) => { if (e.timeStamp - downAt < 160) { downAt = 0; react(); } downAt = 0; });
-addEventListener("contextmenu", (e) => { e.preventDefault(); if (tauri) tauri.core.invoke("quit"); });
+addEventListener("contextmenu", (e) => { e.preventDefault(); if (tauri) tauri.core.invoke("context_menu"); });
 function startBreathing() {
   // 毎フレーム動かすと WindowServer が 1 コアの 2 割強を使う。量が小さいので 8fps で足りる
   setInterval(() => {
@@ -210,10 +259,18 @@ function startBreathing() {
   }, 125);
 }
 
+let dimmed = false;
+function dim(on) {
+  if (on === dimmed) return;
+  dimmed = on;
+  canvas.classList.toggle("dim", on);
+  tauri.event.emit("dim", on);
+}
 function startPolling() {
   if (!tauri) return;
   const w = tauri.window.getCurrentWindow();
-  let over = false;
+  let accepting = false, onBubble = false, hovered = 0;
+  tauri.event.listen("bubble-hover", ({ payload }) => { onBubble = payload; });
   let pos = null, scale = 1; // 窓の位置は動いたときだけ取り直す
   const refresh = async () => { [pos, scale] = await Promise.all([w.outerPosition(), w.scaleFactor()]); };
   w.onMoved(refresh); refresh();
@@ -222,7 +279,13 @@ function startPolling() {
     const c = await tauri.window.cursorPosition();
     const x = (c.x - pos.x) / scale, y = (c.y - pos.y) / scale;
     const inside = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight && opaque(x, y);
-    if (inside !== over) { over = inside; log("cursor " + (over ? "over" : "left")); w.setIgnoreCursorEvents(!over); }
+    const wanted = clickable() && inside;
+    if (wanted !== accepting) { accepting = wanted; w.setIgnoreCursorEvents(!accepting); }
+    if (inside) touched = now();
+    if (engaged && !covered() && now() - touched > ENGAGE_SECONDS) disengage();
+    if (inside || onBubble) hovered = now();
+    // 輪郭の上で点滅しないよう、離れてから少し待って戻す
+    dim(!engaged && hotkeyWorks && now() - hovered < UNDIM_SECONDS);
   }, 200);
 }
 
@@ -235,5 +298,7 @@ function startPolling() {
   await loadPack(QA.has("noload") ? ["blink"] : NAMES);
   log("loaded");
   startLive();
+  startHotkey();
+  startSettings();
   life();
 })();

@@ -14,7 +14,13 @@ Claude Code のコネクタ（Slack / Gmail / Google Calendar / Notion / GitHub 
 ## インストール
 [Releases](../../releases) の dmg から `familiar.app` を Applications に入れて起動します。定期見回りとログイン時の起動は、アプリが登録します。
 
-設定は `~/.local/state/familiar/config.json` に書きます。
+## 使い方
+普段のキャラクターはクリックを下のウィンドウへ通し、カーソルが重なると薄くなります。ホットキー（既定は `⌃⌥Space`）で呼ぶと、提案があれば大きな吹き出しを開き、なければ一言答えます。もう一度押すか、約 10 秒触らないと待機に戻ります。
+
+呼んでいる間と、大きな吹き出しを × や Esc で閉じたあとの約 10 秒は、キャラクターをクリックやドラッグでき、右クリックから設定と終了を選べます。設定は大きな吹き出しの ⚙︎ からも開けます。ホットキーは設定画面で変更できます。
+
+## 設定
+その他の設定は `~/.local/state/familiar/config.json` に書きます。
 
 ```json
 { "linearTeam": "チーム名", "character": "パックの ID" }

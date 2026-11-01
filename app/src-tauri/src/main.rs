@@ -1,12 +1,19 @@
 // Mascot for familiar: a transparent always-on-top character, a speech bubble that follows it,
 // and a large speech bubble with the suggestions. It only reads live.json; every state change goes through the familiar CLI.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::{fs, os::fd::AsRawFd, path::{Path, PathBuf}, process::Command};
-use tauri::{ipc::Response, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, WindowEvent};
+use std::{fs, os::fd::AsRawFd, path::{Path, PathBuf}, process::Command, sync::Mutex};
+use serde_json::{json, Map, Value};
+use tauri::{
+    ipc::Response,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow, WindowEvent,
+};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-const BUBBLE_OVERLAP: f64 = 110.0; // logical px the bubble overlaps the mascot window, so the tail reaches her
+const BUBBLE_OVERLAP: f64 = 73.0; // logical px the bubble overlaps the mascot window, so the tail reaches her
 const BUBBLE_GAP: f64 = 12.0; // logical px between the bubble and the bottom screen edge
 const PANEL_WIDTH: f64 = 500.0;
+const DEFAULT_HOTKEY: &str = "Control+Alt+Space";
 
 fn home() -> PathBuf { PathBuf::from(std::env::var("HOME").unwrap_or_default()) }
 
@@ -106,13 +113,113 @@ fn acquire_single_instance() -> Option<fs::File> {
 }
 
 #[tauri::command]
-fn quit(app: AppHandle) { app.exit(0); }
-
-#[tauri::command]
 fn log(msg: String) { eprintln!("[page] {msg}"); }
 
 #[tauri::command]
 fn qa_flags() -> String { std::env::var("MASCOT_QA").unwrap_or_default() }
+
+fn config_path() -> PathBuf { state_dir().join("config.json") }
+
+/// A missing file is an empty config. A broken one is an error, so saving never wipes it.
+fn read_config() -> Result<Map<String, Value>, String> {
+    match fs::read(config_path()) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("config.json を読めません: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Keeps every other key: the CLI reads this file too.
+fn save_config(key: &str, value: Value) -> Result<(), String> {
+    let mut config = read_config()?;
+    config.insert(key.into(), value);
+    let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
+    fs::create_dir_all(state_dir()).map_err(|e| e.to_string())?;
+    let tmp = config_path().with_extension("json.tmp");
+    fs::write(&tmp, bytes).and_then(|_| fs::rename(&tmp, config_path())).map_err(|e| e.to_string())
+}
+
+/// `active` is false when the shortcut could not be registered. The page then stays clickable,
+/// because the hotkey would otherwise be the only way to reach the mascot.
+struct Hotkey { keys: String, active: bool }
+
+fn parse_hotkey(keys: &str) -> Result<Shortcut, String> {
+    let shortcut: Shortcut = keys.parse().map_err(|_| "このキーは使えません".to_string())?;
+    if !shortcut.mods.intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER) {
+        return Err("⌃ ⌥ ⌘ のどれかと組み合わせてください".into());
+    }
+    Ok(shortcut)
+}
+
+fn register_hotkey(app: &AppHandle, keys: &str) -> Result<(), String> {
+    app.global_shortcut().register(parse_hotkey(keys)?).map_err(|_| "このキーは他で使われています".to_string())
+}
+
+fn hotkey_json(hotkey: &Hotkey) -> Value { json!({ "keys": hotkey.keys, "active": hotkey.active }) }
+
+#[tauri::command]
+fn hotkey(state: State<Mutex<Hotkey>>) -> Value { hotkey_json(&state.lock().unwrap()) }
+
+/// True once, so the hint about the hotkey appears on the first launch only.
+#[tauri::command]
+fn first_run() -> bool {
+    let seen = read_config().map_or(true, |c| c.contains_key("hotkeyHintShown"));
+    !seen && save_config("hotkeyHintShown", json!(true)).is_ok()
+}
+
+/// A combination being typed into settings must not also summon the mascot.
+#[tauri::command]
+fn hotkey_recording(app: AppHandle, state: State<Mutex<Hotkey>>, on: bool) -> Result<(), String> {
+    if on { return app.global_shortcut().unregister_all().map_err(|e| e.to_string()); }
+    let mut hotkey = state.lock().unwrap();
+    hotkey.active = register_hotkey(&app, &hotkey.keys).is_ok();
+    app.emit("hotkey-changed", hotkey_json(&hotkey)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_hotkey(app: AppHandle, state: State<Mutex<Hotkey>>, keys: String) -> Result<Value, String> {
+    let mut hotkey = state.lock().unwrap();
+    let _ = app.global_shortcut().unregister_all();
+    let saved = register_hotkey(&app, &keys).and_then(|_| save_config("hotkey", json!(keys)));
+    if let Err(e) = saved {
+        let _ = app.global_shortcut().unregister_all();
+        hotkey.active = register_hotkey(&app, &hotkey.keys).is_ok();
+        app.emit("hotkey-changed", hotkey_json(&hotkey)).map_err(|e| e.to_string())?;
+        return Err(e);
+    }
+    *hotkey = Hotkey { keys, active: true };
+    let value = hotkey_json(&hotkey);
+    app.emit("hotkey-changed", &value).map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
+#[tauri::command]
+fn context_menu(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    let build = || -> tauri::Result<()> {
+        let settings = MenuItem::with_id(&app, "settings", "設定…", true, None::<&str>)?;
+        let quit = MenuItem::with_id(&app, "quit", "familiar を終了", true, None::<&str>)?;
+        window.popup_menu(&Menu::with_items(&app, &[&settings, &PredefinedMenuItem::separator(&app)?, &quit])?)
+    };
+    build().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn show_settings(app: AppHandle) -> Result<(), String> { open_settings(&app).map_err(|e| e.to_string()) }
+
+fn open_settings(app: &AppHandle) -> tauri::Result<()> {
+    let panel = app.get_webview_window("panel").unwrap();
+    if panel.is_visible()? { // the settings bubble takes the same spot
+        panel.hide()?;
+        app.emit("panel-closed", ())?;
+    }
+    app.emit("settings-open", ())
+}
+
+#[tauri::command]
+fn hide_settings(app: AppHandle) -> Result<(), String> {
+    app.get_webview_window("settings").unwrap().hide().map_err(|e| e.to_string())?;
+    app.emit("settings-closed", ()).map_err(|e| e.to_string())
+}
 
 fn packs_dir() -> PathBuf { home().join(".local/share/familiar/packs") }
 
@@ -123,9 +230,8 @@ fn is_pack_id(id: &str) -> bool {
 /// The character chosen in config.json. None means the default pack in the app.
 #[tauri::command]
 fn character() -> Option<String> {
-    let config = fs::read(state_dir().join("config.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&config).ok()?;
-    let id = value.get("character")?.as_str()?;
+    let config = read_config().ok()?;
+    let id = config.get("character")?.as_str()?;
     (is_pack_id(id) && packs_dir().join(id).is_dir()).then(|| id.to_string())
 }
 
@@ -183,9 +289,9 @@ fn place(main: &WebviewWindow, bubble: &WebviewWindow, size: PhysicalSize<u32>) 
 #[tauri::command]
 fn bubble(app: AppHandle, text: String) -> Result<(), String> {
     let (main, win) = (app.get_webview_window("main").unwrap(), app.get_webview_window("bubble").unwrap());
+    win.emit("bubble-text", &text).map_err(|e| e.to_string())?;
     if text.is_empty() { return win.hide().map_err(|e| e.to_string()); }
     place_bubble(&main, &win).map_err(|e| e.to_string())?;
-    win.emit("bubble-text", text).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())
 }
 
@@ -196,10 +302,10 @@ fn show_panel(app: AppHandle) -> Result<(), String> {
     win.emit("panel-open", ()).map_err(|e| e.to_string())
 }
 
-/// The panel asks for its height once its content is laid out, then appears at that size.
+/// A large bubble (suggestions or settings) asks for its height once its content is laid out, then appears at that size.
 #[tauri::command]
-fn fit_panel(app: AppHandle, height: f64) -> Result<(), String> {
-    let (main, win) = (app.get_webview_window("main").unwrap(), app.get_webview_window("panel").unwrap());
+fn fit_panel(app: AppHandle, window: WebviewWindow, height: f64) -> Result<(), String> {
+    let (main, win) = (app.get_webview_window("main").unwrap(), window);
     let size = LogicalSize::new(PANEL_WIDTH, height);
     win.set_size(size).map_err(|e| e.to_string())?;
     place(&main, &win, size.to_physical(main.scale_factor().map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
@@ -218,8 +324,21 @@ fn main() {
     let Some(_instance) = acquire_single_instance() else { return };
     if let Err(e) = register_agents() { eprintln!("failed to register agents: {e}"); }
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![quit, log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, _, event| {
+            if event.state() == ShortcutState::Pressed { let _ = app.emit_to("main", "hotkey", ()); }
+        }).build())
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "settings" => { let _ = open_settings(app); }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings])
         .setup(|app| {
+            let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
+                .unwrap_or_else(|| DEFAULT_HOTKEY.into());
+            let active = register_hotkey(app.handle(), &keys).inspect_err(|e| eprintln!("hotkey {keys}: {e}")).is_ok();
+            app.manage(Mutex::new(Hotkey { keys, active }));
+
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let win = app.get_webview_window("main").unwrap();
@@ -237,15 +356,36 @@ fn main() {
             let bubble = app.get_webview_window("bubble").unwrap();
             bubble.set_ignore_cursor_events(true)?;
             let panel = app.get_webview_window("panel").unwrap();
+            let settings = app.get_webview_window("settings").unwrap();
             let main = win.clone();
             win.on_window_event(move |e| {
                 if let WindowEvent::Moved(_) = e {
                     let _ = place_bubble(&main, &bubble);
                     let _ = place_bubble(&main, &panel);
+                    let _ = place_bubble(&main, &settings);
                 }
             });
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotkey_accepts_what_settings_records() {
+        for keys in [DEFAULT_HOTKEY, "Control+Alt+KeyK", "Command+Shift+Digit1", "Alt+Comma", "Control+ArrowUp", "Control+Alt+F5"] {
+            assert!(parse_hotkey(keys).is_ok(), "{keys}");
+        }
+    }
+
+    #[test]
+    fn hotkey_needs_a_real_modifier() {
+        for keys in ["KeyA", "Shift+KeyA", "Control+", "Control+NotAKey"] {
+            assert!(parse_hotkey(keys).is_err(), "{keys}");
+        }
+    }
 }

@@ -7,6 +7,7 @@ body{display:flex;align-items:flex-end;justify-content:flex-end;padding:0 18px 0
 #b{position:relative;max-width:266px;white-space:pre-line;padding:9px 14px;border-radius:14px 14px 0 14px;background:var(--paper);border:1.5px solid var(--edge);
   color:var(--ink);font:600 14px/1.4 -apple-system,"Hiragino Sans",sans-serif;opacity:0;transition:opacity .18s}
 #b.on{opacity:1}
+#b.on.dim{opacity:.12}
 /* 本体の右辺を塗りで隠し、下辺を先端まで水平に延ばす。斜辺は左上から右下へ 45 度 */
 #t{position:absolute;left:calc(100% - 1px);bottom:-1.5px;width:15px;height:15px;overflow:visible}
 #t .fill{fill:var(--paper)}
@@ -15,8 +16,22 @@ body{display:flex;align-items:flex-end;justify-content:flex-end;padding:0 18px 0
 <body><div id="b"><span id="s"></span><svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg></div>
 <script>
 const b = document.getElementById("b"), s = document.getElementById("s");
-window.__TAURI__.event.listen("bubble-text", ({ payload }) => {
+const { event, window: win } = window.__TAURI__;
+const self = win.getCurrentWindow();
+let shown = false, over = false;
+const report = (now) => { if (now !== over) { over = now; event.emit("bubble-hover", over); } };
+event.listen("bubble-text", ({ payload }) => {
+  shown = !!payload;
+  if (!shown) return report(false);
   s.textContent = payload;
   b.classList.add("on");
 });
+event.listen("dim", ({ payload }) => b.classList.toggle("dim", payload));
+// クリックは常に下へ通すので、カーソルの重なりは位置で見る
+setInterval(async () => {
+  if (!shown) return;
+  const [c, pos, scale] = await Promise.all([win.cursorPosition(), self.outerPosition(), self.scaleFactor()]);
+  const r = b.getBoundingClientRect(), x = (c.x - pos.x) / scale, y = (c.y - pos.y) / scale;
+  report(x >= r.left && x < r.right && y >= r.top && y < r.bottom);
+}, 200);
 </script></body></html>
