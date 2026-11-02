@@ -155,12 +155,10 @@ async function life() {
 function interrupt() {
   if (brain.hub !== "I") { clearTimeout(timer); wake(); } // ひらめきの決めポーズは短く見せ切る
 }
-const hasNews = () => live.pending > 0 || live.held > 0 || live.lastError;
 function react() {
   log("clicked at hub " + brain.hub);
   if (panelOpen) tauri?.core.invoke("hide_panel");
-  else if (hasNews()) openPanel();
-  else brain.click();
+  else { brain.click(); openPanel(); }
   interrupt();
 }
 
@@ -183,11 +181,9 @@ function disengage() { engaged = false; say(""); }
 function summon() {
   log("hotkey at hub " + brain.hub);
   if (covered()) { engaged = false; return void tauri.core.invoke(panelOpen ? "hide_panel" : "hide_settings"); }
-  if (engaged) return disengage();
   engage();
-  if (hasNews()) openPanel();
-  else if (notchMode) showBubble();
-  else { say("はい、今は気になることはありません", ENGAGE_SECONDS); brain.click(); }
+  brain.click();
+  openPanel();
   interrupt();
 }
 function applyHotkey({ keys, active }) {
@@ -197,7 +193,7 @@ function applyHotkey({ keys, active }) {
 }
 
 // ── familiar の状態 ─────────────────
-const POLL_SECONDS = 2;
+const POLL_SECONDS = 2, HEADLINE = 30;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
 let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };
 let panelOpen = false, settingsOpen = false, lastBubble = null, lastNotch = null, reply = "", notchMode = false;
@@ -210,7 +206,9 @@ function bubbleText() {
   if (covered()) return ""; // 大きな吹き出しが開いている間は、そちらが代わりになる
   if (reply) return reply;
   if (live.lastError) return "見回りがうまくいきませんでした";
-  const fresh = `気になることが ${live.pending} 件あります`;
+  const title = live.headline && live.headline.length > HEADLINE ? `${live.headline.slice(0, HEADLINE)}…` : live.headline;
+  const fresh = !title ? `気になることが ${live.pending} 件あります`
+    : live.pending > 1 ? `${title}\nほか ${live.pending - 1} 件` : title;
   if (live.pending > 0 && live.held > 0) return `${fresh}。\n後回しの件も ${live.held} 件残っています`;
   if (live.pending > 0) return fresh;
   return live.held > 0 ? `後回しの件が ${live.held} 件残っています` : "";
@@ -287,14 +285,14 @@ function startSettings() {
   tauri.event.listen("display-changed", ({ payload }) => applyDisplay(payload));
   tauri.event.listen("notch-click", react);
   tauri.event.listen("settings-open", () => { settingsOpen = true; showBubble(); });
-  tauri.event.listen("setup-open", () => { settingsOpen = true; showBubble(); });
-  tauri.event.listen("review-open", () => { settingsOpen = true; showBubble(); });
+  tauri.event.listen("talk", react);
   tauri.event.listen("settings-closed", () => { settingsOpen = false; touched = now(); showBubble(); });
   if (QA.has("settings")) tauri.core.invoke("show_settings"); // 実機で設定を開く計測用
-  if (QA.has("review")) tauri.core.invoke("show_review"); // 実機で記録を開く計測用
-  tauri.core.invoke("familiar", { args: ["setup", "status"] })
-    .then((status) => { if (status.trim() === "needed") tauri.core.invoke("show_setup"); })
-    .catch((e) => log("setup " + e));
+  if (QA.has("talk")) openPanel(); // 実機で会話を開く計測用
+  // 初回は声をかける
+  tauri.core.invoke("familiar", { args: ["thread", "--limit", "1"] })
+    .then((state) => { if (JSON.parse(state).onboarding) openPanel(); })
+    .catch((e) => log("thread " + e));
 }
 async function startHotkey() {
   if (!tauri) return;

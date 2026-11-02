@@ -5,6 +5,8 @@ public typealias Event = [String: Any]
 public struct RunOutcome {
     public var exitCode: Int32
     public var result: Event?
+    /// 実行の記録の ID
+    public var run: String? = nil
 }
 
 public struct ClaudeRunner {
@@ -51,6 +53,7 @@ public struct ClaudeRunner {
         defer { watchdog.cancel() }
 
         var outcome = RunOutcome(exitCode: 0)
+        outcome.run = record?.id
         var buffer = Data()
         let handle = pipe.fileHandleForReading
         func consume(_ line: Data) {
@@ -83,7 +86,9 @@ extension RunOutcome {
     func structured<T: Decodable>(_ type: T.Type) throws -> T {
         guard exitCode == 0, let result, result["is_error"] as? Bool != true,
               let output = result["structured_output"] else {
-            let detail = (result?["subtype"] as? String) ?? "結果なし"
+            // モデルが応答を止めたときなどは subtype が success のままなので、本文の 1 行目を伝える
+            let reason = (result?["result"] as? String)?.split(separator: "\n").first.map(String.init)
+            let detail = reason ?? (result?["subtype"] as? String) ?? "結果なし"
             throw FamiliarError.failed("claude の実行に失敗しました（exit \(exitCode), \(detail)）")
         }
         return try JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: output))

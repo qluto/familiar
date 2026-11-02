@@ -3,12 +3,14 @@ import Foundation
 /// 実行中のイベントを 1 行ずつ残す。記録できなくても実行は止めない。
 final class RunRecord {
     private let handle: FileHandle
+    let id: String
 
     init?(dir: URL, label: String, model: String?, prompt: String, now: Date = Date()) {
         let fm = FileManager.default
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         Runs.prune(dir, now: now)
-        let url = dir.appendingPathComponent("\(Runs.stamp(now))-\(UUID().uuidString.prefix(4).lowercased()).jsonl")
+        id = "\(Runs.stamp(now))-\(UUID().uuidString.prefix(4).lowercased())"
+        let url = dir.appendingPathComponent("\(id).jsonl")
         // メールなどの本文を含むので、本人だけが読める形で作る
         guard fm.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]),
               let handle = try? FileHandle(forWritingTo: url) else { return nil }
@@ -19,7 +21,17 @@ final class RunRecord {
     }
 
     func append(_ line: Data) {
-        try? handle.write(contentsOf: line + Data([0x0A]))
+        try? handle.write(contentsOf: Self.withoutThinking(line) + Data([0x0A]))
+    }
+
+    /// 思考のブロックは読めず、記録を読む AI の妨げにもなるので残さない。
+    static func withoutThinking(_ line: Data) -> Data {
+        guard var event = (try? JSONSerialization.jsonObject(with: line)) as? Event,
+              var message = event["message"] as? Event, let blocks = message["content"] as? [Event],
+              blocks.contains(where: { $0["type"] as? String == "thinking" }) else { return line }
+        message["content"] = blocks.filter { $0["type"] as? String != "thinking" }
+        event["message"] = message
+        return (try? JSONSerialization.data(withJSONObject: event)) ?? line
     }
 
     deinit { try? handle.close() }
@@ -94,7 +106,7 @@ public struct Runs {
             let url = dir.appendingPathComponent(name)
             let all = events(url)
             guard let head = all.first, head["type"] as? String == "familiar_run",
-                  let label = head["label"] as? String, label != "review" else { continue }
+                  let label = head["label"] as? String, label != "chat" else { continue }
             let result = all.last { $0["type"] as? String == "result" }
             let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
             let status: String
@@ -149,10 +161,6 @@ public struct Runs {
                     switch block["type"] as? String {
                     case "text":
                         out.append(RunEntry(kind: "text", title: "発言", text: clip(block["text"] as? String ?? "")))
-                    case "thinking":
-                        if let text = block["thinking"] as? String, !text.isEmpty {
-                            out.append(RunEntry(kind: "text", title: "思考", text: clip(text)))
-                        }
                     case "tool_use":
                         let name = block["name"] as? String ?? "tool"
                         if let id = block["id"] as? String { tools[id] = name }

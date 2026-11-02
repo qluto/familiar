@@ -30,8 +30,8 @@ public struct Workspace {
             if name == "OUTPUT.md", let team = Config.load(paths)?.linearTeam { text += "- Linear のチームは \(team)\n" }
             try text.write(to: file(name), atomically: true, encoding: .utf8)
         }
-        // 初回の対話の目印。終わると Setup が消す
-        if fresh { try "初回の対話がまだです。設定の「対話で設定」から始められます\n".write(to: file("BOOTSTRAP.md"), atomically: true, encoding: .utf8) }
+        // 初回の対話の目印。変更案を反映すると消える
+        if fresh { try "初回の対話がまだです。キャラクターと話すと始まります\n".write(to: file("BOOTSTRAP.md"), atomically: true, encoding: .utf8) }
     }
 
     public func read(_ name: String) throws -> String {
@@ -90,6 +90,16 @@ public struct Workspace {
         let kinds = Set(s.draft.sources.map(\.kind)).sorted().joined(separator: ",")
         var line = "- \(Self.minute(now)) \(action)「\(s.draft.title)」(\(s.draft.kind), \(kinds))"
         if let detail, !detail.isEmpty { line += " あなた: \(detail)" }
+        try appendNote(line, now: now)
+    }
+
+    /// 会話でのユーザーの言葉も、判断と同じように整理の材料にする。
+    public func remember(_ text: String, now: Date = Date()) throws {
+        try prepare()
+        try appendNote("- \(Self.minute(now)) \(text)", now: now)
+    }
+
+    private func appendNote(_ line: String, now: Date) throws {
         let flat = line.replacingOccurrences(of: "\n", with: " ") + "\n"
         let url = file("memory/\(Self.day(now)).md")
         if let h = try? FileHandle(forWritingTo: url) {

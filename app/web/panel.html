@@ -1,30 +1,59 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><title>提案</title>
+<html lang="ja"><head><meta charset="utf-8"><title>familiar</title>
 <link rel="stylesheet" href="sheet.css">
 <style>
-h3{margin:12px 0 0;font-size:12px;color:var(--sub);font-weight:600}
-.empty{color:var(--sub);padding:6px 0 10px}
-.error{color:var(--warn);padding:6px 0 10px;white-space:pre-wrap}
-article{padding:12px 0;display:grid;gap:6px;border-bottom:1.5px dashed var(--edge)}
-article:last-child{border-bottom:0;padding-bottom:4px}
-h2{margin:0;font-size:14.5px;line-height:1.45}
+#b{height:100%}
+main{display:flex;flex-direction:column;gap:8px}
+.line{white-space:pre-wrap;line-height:1.6;max-width:90%;user-select:text;-webkit-user-select:text}
+.you{align-self:flex-end;background:var(--tint);border-radius:10px;padding:4px 10px}
+.wait{color:var(--sub)}
+.error{color:var(--warn);white-space:pre-wrap}
+details.scan{font-size:12px;color:var(--sub);user-select:text;-webkit-user-select:text}
+details.scan summary{cursor:pointer}
+details.entry{margin:3px 0 0 12px}
+pre{margin:3px 0 0;padding:6px 8px;border-radius:8px;background:var(--tint);color:var(--ink);white-space:pre-wrap;word-break:break-word;font:11.5px/1.5 ui-monospace,Menlo,monospace}
+.said{margin:3px 0 0 12px;color:var(--ink);white-space:pre-wrap}
+#cards{display:flex;flex-direction:column;gap:8px}
+#cards:empty{display:none}
+article{border:1.5px solid var(--edge);border-radius:12px;padding:9px 12px;display:grid;gap:5px}
+article.selected{border-color:var(--accent)}
+h2{margin:0;font-size:14px;line-height:1.45}
 .meta{color:var(--sub);font-size:12px}
 .high{color:var(--warn);font-weight:600}
 p{margin:0}
 .src{display:grid;gap:3px;font-size:12px;color:var(--sub)}
-.src button{all:unset;cursor:pointer;color:var(--accent);text-decoration:underline}
+.link{all:unset;cursor:pointer;color:var(--accent);text-decoration:underline}
 blockquote{margin:0;padding-left:8px;border-left:2px solid var(--edge)}
 .details{font-size:13px;white-space:pre-wrap}
-.question{font-weight:600;color:var(--accent);white-space:pre-wrap}
-input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:5px 8px;width:100%}
-.actions{display:flex;gap:6px;align-items:center;margin-top:2px}
-.actions button{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
-.actions .go{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
-button:disabled{opacity:.5;cursor:default}
+.question,.plan{white-space:pre-wrap;font-weight:600;color:var(--accent)}
+.diff{font:11.5px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
+.add{background:#e6efdf}
+.del{background:#f6e3dd;text-decoration:line-through}
+.same{color:var(--sub)}
+h3{margin:0;font-size:12px}
+.actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.actions button,form button,.chip button{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
+.actions .go,#send{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
+.actions .talk{margin-left:auto;color:var(--sub)}
 .note{font-size:12px;color:var(--warn);white-space:pre-wrap}
+button:disabled{opacity:.5;cursor:default}
+footer{flex:none;padding:8px 18px 12px;display:grid;gap:5px;border-top:1.5px dashed var(--edge)}
+#chip{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--sub)}
+#chip[hidden]{display:none}
+#chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chip .icon{width:18px;height:18px;line-height:18px;flex:none}
+form{display:flex;gap:6px;align-items:center}
+input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:6px 9px;flex:1;min-width:0}
 </style></head>
 <body><div id="b">
-<header><span id="h"></span><span><button id="settings" class="icon" aria-label="設定">⚙︎</button><button id="close" class="icon" aria-label="閉じる">×</button></span></header>
-<main id="m"></main>
+<header><span id="h">familiar</span><span><button id="settings" class="icon" aria-label="設定">⚙︎</button><button id="close" class="icon" aria-label="閉じる">×</button></span></header>
+<main id="m">
+  <div id="thread" role="log" style="display:flex;flex-direction:column;gap:8px"></div>
+  <div id="cards"></div>
+</main>
+<footer>
+  <div id="chip" hidden><span id="chip-text"></span><button id="chip-clear" class="icon" aria-label="話題を外す">×</button></div>
+  <form id="f"><input id="text" aria-label="話す" placeholder="話しかける" autocomplete="off"><button id="send">送る</button></form>
+</footer>
 <svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
 </div><script src="panel.js"></script></body></html>

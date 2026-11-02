@@ -4,6 +4,8 @@ public struct ScanReport {
     public var added: [Suggestion]
     public var coverage: [Coverage]
     public var upcoming: [Date]
+    /// 見回りの実行の記録
+    public var run: String?
 }
 
 /// 見回り。何を見るかは HEARTBEAT.md に従い、提案の保存と cursor の更新を行う。
@@ -53,6 +55,8 @@ public struct Scanner {
                 $0.scanning = false; $0.scanStarted = nil; $0.scanSeq += 1
                 $0.lastAdded = report.added.count; $0.lastError = nil
             }
+            let found = report.added.isEmpty ? "何もありませんでした" : "\(report.added.count) 件見つけました"
+            try? Thread(paths: paths).append("scan", "見回りました。\(found)", run: report.run, now: now)
             var state = ScheduleState.load(paths.schedule)
             state.lastSuccess = now
             state.lastError = nil
@@ -61,6 +65,7 @@ public struct Scanner {
             return report
         } catch {
             log("error \(error)", now: now)
+            try? Thread(paths: paths).append("scan", "見回りがうまくいきませんでした: \(error)", now: now)
             try? store.updateLive {
                 $0.scanning = false; $0.scanStarted = nil; $0.scanSeq += 1
                 $0.lastAdded = 0; $0.lastError = "\(error)"
@@ -110,7 +115,7 @@ public struct Scanner {
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         let cov = first.coverage.map { "\($0.source)=\($0.status)" }.joined(separator: " ")
         log("ok \(note) ms=\(ms) usd=\(cost) returned=\(first.suggestions.count) added=\(added.count) \(cov)", now: now)
-        return ScanReport(added: added, coverage: first.coverage, upcoming: first.upcomingDates)
+        return ScanReport(added: added, coverage: first.coverage, upcoming: first.upcomingDates, run: firstRun.run)
     }
 
     static func refinePrompt(base: String, candidates: [Draft]) throws -> String {

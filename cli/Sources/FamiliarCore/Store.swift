@@ -47,6 +47,7 @@ public struct Store {
             try write(items)
             var live = Live.load(paths.live)
             live.pending = items.filter { $0.status == .new }.count
+            live.headline = items.first { $0.status == .new }?.draft.title
             live.held = items.filter { $0.status == .snoozed || $0.status == .accepting }.count
             try live.save(to: paths.live)
             return result

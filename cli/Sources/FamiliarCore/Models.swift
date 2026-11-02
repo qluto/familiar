@@ -74,11 +74,15 @@ public struct Suggestion: Codable, Equatable {
     public var resultUrl: String?
     /// エージェントが返事を待っている質問。
     public var question: String?
+    /// エージェントが承認を待っている計画。
+    public var plan: String?
+    /// 人が計画を承認した。質問への返事のあとも、計画に戻らず続ける。
+    public var approved: Bool?
     /// 指示と質問のやり取り。採用をやり直すときに渡す。
     public var dialog: [String]?
 
     private enum CodingKeys: String, CodingKey {
-        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, dialog
+        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, plan, approved, dialog
         case resultUrl = "linearUrl" // 保存済みの提案と同じキーのまま読む
     }
 

@@ -64,8 +64,6 @@ function showDisplay({ mode, hasNotch }) {
 for (const [name, button] of Object.entries(modeButtons)) {
   button.onclick = async () => { showDisplay(await core.invoke("set_display", { mode: name })); await core.invoke("hide_settings"); };
 }
-document.getElementById("setup").onclick = () => core.invoke("show_setup");
-document.getElementById("review").onclick = () => core.invoke("show_review");
 document.getElementById("workspace").onclick = () => core.invoke("open_workspace");
 const fit = () => core.invoke("fit_panel", { height: document.querySelector("header").offsetHeight + main.scrollHeight + 4 });
 event.listen("hotkey-changed", ({ payload }) => { if (!recording) show(payload); });
