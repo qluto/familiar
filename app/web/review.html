@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>見回りの記録</title>
+<link rel="stylesheet" href="sheet.css">
+<style>
+#b{height:100%}
+header select{font:inherit;font-size:12.5px;font-weight:400;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:3px 6px;max-width:520px}
+#m{display:flex;flex-direction:column;gap:8px;overflow:hidden}
+#entries{flex:1 1 0;min-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;border-bottom:1.5px dashed var(--edge);padding-bottom:8px}
+details,.text{font-size:12.5px;line-height:1.55;user-select:text;-webkit-user-select:text}
+summary{cursor:pointer;color:var(--sub)}
+pre{margin:3px 0 0;padding:6px 8px;border-radius:8px;background:var(--tint);white-space:pre-wrap;word-break:break-word;font:11.5px/1.5 ui-monospace,Menlo,monospace}
+.text{white-space:pre-wrap}
+.err summary{color:var(--warn)}
+.final summary{color:var(--accent);font-weight:600}
+#chat{flex:none;height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.line{white-space:pre-wrap;line-height:1.55;max-width:90%;user-select:text;-webkit-user-select:text}
+.you{align-self:flex-end;background:var(--tint);border-radius:10px;padding:4px 10px}
+.wait{color:var(--sub)}
+.error{color:var(--warn)}
+#proposal{flex:none;max-height:190px;overflow-y:auto;border:1.5px solid var(--edge);border-radius:10px;padding:6px 10px;display:grid;gap:4px}
+#proposal[hidden]{display:none}
+#proposal h3{margin:0;font-size:12px}
+.diff{font:11.5px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
+.add{background:#e6efdf}
+.del{background:#f6e3dd;text-decoration:line-through}
+.same{color:var(--sub)}
+.actions{display:flex;gap:6px}
+form{flex:none;display:flex;gap:6px;align-items:center}
+input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:6px 9px;flex:1;min-width:0}
+form button,.actions button{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
+#send,#apply{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+</style></head>
+<body><div id="b">
+<header><select id="runs" aria-label="実行"></select><button id="close" class="icon" aria-label="閉じる">×</button></header>
+<main id="m">
+  <div id="entries" role="log"></div>
+  <div id="chat" role="log"></div>
+  <section id="proposal" hidden>
+    <div id="diffs"></div>
+    <div class="actions"><button id="apply">反映</button><button id="discard">取り消す</button></div>
+  </section>
+  <form id="f"><input id="text" aria-label="AI への言葉" placeholder="この記録について話す" autocomplete="off"><button id="send">送る</button></form>
+</main>
+<svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
+</div><script src="review.js"></script></body></html>

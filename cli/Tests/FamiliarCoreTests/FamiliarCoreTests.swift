@@ -312,3 +312,112 @@ func acceptFixture(_ agent: FakeAgent) throws -> (Acceptor, Store, String) {
     let s = try store.load()[0]
     #expect(s.status == .new && s.question?.contains("途中まで") == true)
 }
+
+// MARK: - 実行の記録と見直し
+
+@discardableResult
+func writeRun(_ paths: Paths, id: String = "20261102-090000-ab12", events: [Event]) throws -> String {
+    let dir = paths.state.appendingPathComponent("runs")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let lines = try events.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+    try lines.joined(separator: "\n").write(to: dir.appendingPathComponent("\(id).jsonl"), atomically: true, encoding: .utf8)
+    return id
+}
+
+let head: Event = ["type": "familiar_run", "label": "scan", "model": "haiku", "started": "2026-11-02T00:00:00Z", "prompt": "見回って"]
+
+@Test func recordKeepsThePromptAndEvents() throws {
+    let dir = tempPaths().state.appendingPathComponent("runs")
+    let record = try #require(RunRecord(dir: dir, label: "scan", model: "haiku", prompt: "見回って"))
+    record.append(Data(#"{"type":"result","is_error":false,"total_cost_usd":0.5}"#.utf8))
+    let paths = Paths(state: dir.deletingLastPathComponent(), prompts: dir)
+    let run = try #require(Runs(paths: paths).list().first)
+    #expect(run.label == "scan" && run.status == "done" && run.costUsd == 0.5)
+    let name = try #require(FileManager.default.contentsOfDirectory(atPath: dir.path).first)
+    let mode = try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent(name).path)[.posixPermissions] as? Int
+    #expect(mode == 0o600)
+}
+
+@Test func entriesFollowTheStreamAndSkipEmptyThinking() throws {
+    let tool: Event = ["type": "assistant", "message": ["content": [
+        ["type": "thinking", "thinking": ""],
+        ["type": "text", "text": "Gmail を見ます"],
+        ["type": "tool_use", "id": "1", "name": "search", "input": ["q": "x"]],
+    ] as [Event]]]
+    let result: Event = ["type": "user", "message": ["content": [
+        ["type": "tool_result", "tool_use_id": "1", "content": [["type": "text", "text": "0 件"]] as [Event]],
+    ] as [Event]]]
+    let entries = Runs.entries(from: [head, tool, result, ["type": "result", "structured_output": ["n": 1]]])
+    #expect(entries.map(\.kind) == ["prompt", "text", "tool", "output", "final"])
+    #expect(entries[3].title == "search の結果" && entries[3].text == "0 件")
+}
+
+@Test func unfinishedRunIsRunningThenStopped() throws {
+    let paths = tempPaths()
+    try writeRun(paths, events: [head])
+    #expect(Runs(paths: paths).list().first?.status == "running")
+    #expect(Runs(paths: paths).list(now: Date().addingTimeInterval(3600)).first?.status == "stopped")
+}
+
+@Test func runIdCannotLeaveTheFolder() throws {
+    let paths = tempPaths()
+    try writeRun(paths, events: [head])
+    #expect(throws: (any Error).self) { try Runs(paths: paths).entries("../config") }
+}
+
+@Test func oldRunsAndTheirReviewsArePruned() throws {
+    let paths = tempPaths()
+    try writeRun(paths, events: [head])
+    let dir = paths.state.appendingPathComponent("runs")
+    try Data().write(to: dir.appendingPathComponent("20261102-090000-ab12.review.json"))
+    Runs.prune(dir, now: Date().addingTimeInterval(15 * 86400))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+}
+
+@Test func reviewListsNoReviewRuns() throws {
+    let paths = tempPaths()
+    var review = head
+    review["label"] = "review"
+    try writeRun(paths, events: [review])
+    #expect(Runs(paths: paths).list().isEmpty)
+}
+
+func reviewFixture(files: [String: Any?]) throws -> (Review, Workspace, Paths, String) {
+    let paths = tempPaths()
+    try FileManager.default.createDirectory(at: paths.prompts, withIntermediateDirectories: true)
+    for name in ["BOOTSTRAP.md", "SOUL.md", "USER.md", "HEARTBEAT.md", "OUTPUT.md", "review.md"] {
+        try "".write(to: paths.prompts.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+    let id = try writeRun(paths, events: [head])
+    let workspace = Workspace(paths: paths)
+    try workspace.prepare()
+    try "前".write(to: workspace.file("OUTPUT.md"), atomically: true, encoding: .utf8)
+    var all: [String: Any] = ["soul": NSNull(), "user": NSNull(), "heartbeat": NSNull(), "output": NSNull(), "memory": NSNull()]
+    for (k, v) in files { all[k] = v ?? NSNull() }
+    let agent = FakeAgent(output: ["message": "こうします", "files": all])
+    return (Review(paths: paths, agent: agent), workspace, paths, id)
+}
+
+@Test func reviewSavesOnlyWhenApplied() throws {
+    let (review, workspace, _, id) = try reviewFixture(files: ["output": "後"])
+    let state = try review.say(id, "直して")
+    #expect(state.proposal == [Review.Change(file: "OUTPUT.md", before: "前", after: "後")])
+    #expect(try String(contentsOf: workspace.file("OUTPUT.md"), encoding: .utf8) == "前")
+    let applied = try review.apply(id)
+    #expect(applied.proposal.isEmpty)
+    #expect(try String(contentsOf: workspace.file("OUTPUT.md"), encoding: .utf8) == "後")
+    #expect(try String(contentsOf: workspace.file("memory/previous-OUTPUT.md"), encoding: .utf8) == "前")
+}
+
+@Test func reviewRefusesAFileChangedAfterTheProposal() throws {
+    let (review, workspace, _, id) = try reviewFixture(files: ["output": "後"])
+    _ = try review.say(id, "直して")
+    try "人が直した".write(to: workspace.file("OUTPUT.md"), atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { try review.apply(id) }
+    #expect(try String(contentsOf: workspace.file("OUTPUT.md"), encoding: .utf8) == "人が直した")
+}
+
+@Test func reviewWithoutChangesKeepsNoProposal() throws {
+    let (review, _, _, id) = try reviewFixture(files: ["output": "前"])
+    #expect(try review.say(id, "どう思う？").proposal.isEmpty)
+}

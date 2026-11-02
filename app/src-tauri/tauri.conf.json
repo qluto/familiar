@@ -90,6 +90,21 @@
         "visibleOnAllWorkspaces": true
       },
       {
+        "label": "review",
+        "title": "見回りの記録",
+        "url": "review.html",
+        "width": 680,
+        "height": 700,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "visibleOnAllWorkspaces": true
+      },
+      {
         "label": "setup",
         "title": "対話で設定",
         "url": "setup.html",

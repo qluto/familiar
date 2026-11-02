@@ -12,6 +12,9 @@ usage: familiar <command>
   workspace                                記憶と指示の置き場を用意して表示する
   setup status|log|reset|say [言葉]         AI との対話で指示と記憶を整える
   dream [--force]                          最近の判断を長期記憶へ整理する
+  runs [--limit 件数] [--json]               実行の記録の一覧
+  log <id> [--json]                        実行の記録を読みやすくして表示する
+  review log|say|apply|discard <run> [言葉]  記録を見ながら AI と話し、指示の変更案を反映する
   dismiss <id> [理由]
   snooze <id> [時間数]                      既定: 24
 """
@@ -124,6 +127,36 @@ func run() throws {
         case "log": print(String(decoding: try JSONEncoder().encode(setup.log()), as: UTF8.self))
         case "reset": try setup.reset()
         case "say": print(String(decoding: try JSONEncoder().encode(setup.say(rest.dropFirst().first)), as: UTF8.self))
+        default: throw FamiliarError.invalidState(usage)
+        }
+    case "runs":
+        let args = try Args(rest, valued: ["--limit"])
+        let items = Runs(paths: paths).list(limit: args.options["--limit"].flatMap(Int.init) ?? 50)
+        if args.flags.contains("--json") {
+            print(String(decoding: try JSONEncoder().encode(items), as: UTF8.self))
+            return
+        }
+        for r in items { print("\(r.id)  [\(r.status)] \(r.label) \(r.model ?? "-")  \(r.costUsd.map { String(format: "$%.3f", $0) } ?? "-")") }
+    case "log":
+        let args = try Args(rest, valued: [])
+        let entries = try Runs(paths: paths).entries(try args.id())
+        if args.flags.contains("--json") {
+            print(String(decoding: try JSONEncoder().encode(entries), as: UTF8.self))
+            return
+        }
+        print(Runs.render(entries))
+    case "review":
+        guard rest.count >= 2 else { throw FamiliarError.invalidState(usage) }
+        let review = Review(paths: paths)
+        let run = rest[1]
+        let show = { (state: Review.State) in print(String(decoding: try JSONEncoder().encode(state), as: UTF8.self)) }
+        switch rest[0] {
+        case "log": try show(review.state(run))
+        case "say":
+            guard let words = rest.dropFirst(2).first else { throw FamiliarError.invalidState(usage) }
+            try show(review.say(run, words))
+        case "apply": try show(review.apply(run))
+        case "discard": try show(review.discard(run))
         default: throw FamiliarError.invalidState(usage)
         }
     case "dream":

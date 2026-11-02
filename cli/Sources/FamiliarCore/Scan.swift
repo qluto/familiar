@@ -75,9 +75,9 @@ public struct Scanner {
     private func runStages(triage: String, refine: String?, now: Date) throws -> ScanReport {
         let prompts = paths.prompts
         let schema = try String(contentsOf: prompts.appendingPathComponent("suggestions.schema.json"), encoding: .utf8)
-        func stage(_ model: String, _ prompt: String) throws -> (ScanOutput, RunOutcome) {
+        func stage(_ model: String, _ prompt: String, _ label: String) throws -> (ScanOutput, RunOutcome) {
             let args = ClaudeRunner.baseArguments(model: model, schema: schema, maxTurns: 40, budget: "2")
-            let outcome = try runner.run(prompt: prompt, arguments: args, cwd: paths.state)
+            let outcome = try runner.run(prompt: prompt, arguments: args, cwd: paths.state, label: label)
             return (try outcome.structured(ScanOutput.self), outcome)
         }
 
@@ -86,7 +86,7 @@ public struct Scanner {
         let workspace = Workspace(paths: paths)
         let base = rules + "\n" + (try workspace.read("HEARTBEAT.md")) + workspace.context(now: now)
         let started = Date()
-        let (first, firstRun) = try stage(triage, Self.prompt(base: base, cursor: cursor, known: store.load(now: now), now: now))
+        let (first, firstRun) = try stage(triage, Self.prompt(base: base, cursor: cursor, known: store.load(now: now), now: now), "scan")
         var cost = firstRun.cost
         var note = "model=\(triage)"
 
@@ -95,7 +95,7 @@ public struct Scanner {
         if let refine, !candidates.isEmpty {
             do {
                 let instructions = try String(contentsOf: prompts.appendingPathComponent("refine.md"), encoding: .utf8)
-                let (second, secondRun) = try stage(refine, Self.refinePrompt(base: instructions + workspace.context(now: now), candidates: candidates))
+                let (second, secondRun) = try stage(refine, Self.refinePrompt(base: instructions + workspace.context(now: now), candidates: candidates), "refine")
                 drafts = second.suggestions
                 cost += secondRun.cost
                 note += "+\(refine)"

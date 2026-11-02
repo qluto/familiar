@@ -7,7 +7,8 @@
     "panel",
     "settings",
     "notch",
-    "setup"
+    "setup",
+    "review"
   ],
   "permissions": [
     "core:default",

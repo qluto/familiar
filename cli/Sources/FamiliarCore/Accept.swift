@@ -8,10 +8,11 @@ public protocol AgentRun {
 struct ClaudeAgent: AgentRun {
     let runner: ClaudeRunner
     let cwd: URL
+    var label = "accept"
     func run(prompt: String, schema: String) throws -> RunOutcome {
         // MCP の定義だけで、キャッシュがないときの初回は 1 ドルほどかかる
         let args = ClaudeRunner.baseArguments(model: "sonnet", schema: schema, maxTurns: 30, budget: "3")
-        return try runner.run(prompt: prompt, arguments: args, cwd: cwd)
+        return try runner.run(prompt: prompt, arguments: args, cwd: cwd, label: label)
     }
 }
 

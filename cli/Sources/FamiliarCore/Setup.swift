@@ -5,7 +5,14 @@ public struct Setup {
     public struct Line: Codable, Equatable { public var role: String; public var text: String }
     public struct Reply: Codable { public var message: String; public var done: Bool }
 
-    struct Files: Decodable { var soul, user, heartbeat, output, memory: String? }
+    struct Files: Codable {
+        var soul, user, heartbeat, output, memory: String?
+
+        var changes: [String: String] {
+            let all = [("SOUL.md", soul), ("USER.md", user), ("HEARTBEAT.md", heartbeat), ("OUTPUT.md", output), ("MEMORY.md", memory)]
+            return Dictionary(uniqueKeysWithValues: all.compactMap { name, text in text.map { (name, $0) } })
+        }
+    }
     struct Turn: Decodable { var message: String; var done: Bool; var files: Files }
 
     static let schema = #"""
@@ -23,7 +30,7 @@ public struct Setup {
     public init(paths: Paths, agent: AgentRun? = nil) {
         self.paths = paths
         self.workspace = Workspace(paths: paths)
-        self.agent = agent ?? ClaudeAgent(runner: ClaudeRunner(), cwd: paths.state)
+        self.agent = agent ?? ClaudeAgent(runner: ClaudeRunner(), cwd: paths.state, label: "setup")
     }
 
     private var transcript: URL { paths.state.appendingPathComponent("setup.json") }
@@ -69,18 +76,7 @@ public struct Setup {
     }
 
     private func apply(_ files: Files) throws {
-        guard (files.user?.count ?? 0) <= Workspace.userLimit, (files.memory?.count ?? 0) <= Workspace.memoryLimit else {
-            throw FamiliarError.failed("内容が上限を超えたので保存しませんでした。短くするよう伝えてください")
-        }
-        let changed = [("SOUL.md", files.soul), ("USER.md", files.user), ("HEARTBEAT.md", files.heartbeat),
-                       ("OUTPUT.md", files.output), ("MEMORY.md", files.memory)]
-        for case let (name, text?) in changed {
-            // 書き換える前の版を 1 つ残し、人が戻せるようにする
-            if let old = try? String(contentsOf: workspace.file(name), encoding: .utf8) {
-                try old.write(to: workspace.file("memory/previous-\(name)"), atomically: true, encoding: .utf8)
-            }
-            try text.write(to: workspace.file(name), atomically: true, encoding: .utf8)
-        }
+        try workspace.replace(files.changes)
         try? FileManager.default.removeItem(at: workspace.file("BOOTSTRAP.md"))
     }
 }

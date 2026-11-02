@@ -288,8 +288,10 @@ function startSettings() {
   tauri.event.listen("notch-click", react);
   tauri.event.listen("settings-open", () => { settingsOpen = true; showBubble(); });
   tauri.event.listen("setup-open", () => { settingsOpen = true; showBubble(); });
+  tauri.event.listen("review-open", () => { settingsOpen = true; showBubble(); });
   tauri.event.listen("settings-closed", () => { settingsOpen = false; touched = now(); showBubble(); });
   if (QA.has("settings")) tauri.core.invoke("show_settings"); // 実機で設定を開く計測用
+  if (QA.has("review")) tauri.core.invoke("show_review"); // 実機で記録を開く計測用
   tauri.core.invoke("familiar", { args: ["setup", "status"] })
     .then((status) => { if (status.trim() === "needed") tauri.core.invoke("show_setup"); })
     .catch((e) => log("setup " + e));

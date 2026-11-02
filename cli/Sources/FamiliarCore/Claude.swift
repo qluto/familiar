@@ -29,7 +29,10 @@ public struct ClaudeRunner {
         ]
     }
 
-    public func run(prompt: String, arguments: [String], cwd: URL) throws -> RunOutcome {
+    /// 流れてくるイベントは cwd の runs/ にそのまま残し、あとから見返せるようにする。
+    public func run(prompt: String, arguments: [String], cwd: URL, label: String = "run") throws -> RunOutcome {
+        let model = arguments.firstIndex(of: "--model").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        let record = RunRecord(dir: cwd.appendingPathComponent("runs"), label: label, model: model, prompt: prompt)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["-p"] + arguments
@@ -51,6 +54,7 @@ public struct ClaudeRunner {
         var buffer = Data()
         let handle = pipe.fileHandleForReading
         func consume(_ line: Data) {
+            record?.append(line)
             guard let event = (try? JSONSerialization.jsonObject(with: line)) as? Event else { return }
             if event["type"] as? String == "result" { outcome.result = event }
         }

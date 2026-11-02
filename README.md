@@ -23,6 +23,11 @@ Claude Code のコネクタ（既定は Slack / Gmail / Google Calendar / Notion
 - **読むだけ:** 見回りのプロセスは書き込みツールを持ちません。外部に書き込むのは、人が採用した確定済みの値だけです
 - **キャラクターは差し替え可能:** 同梱のデフォルトのほか、[キャラクターパック](docs/character-pack.md)を[自分で作れます](app/packs/README.md)
 
+## 見回りの記録
+キャラクターの右クリックか設定の `記録` から、実行の記録を開けます。見回りの途中経過を読みながら AI と話すと、指示の変更案が差分で届き、`反映` で保存します。AI は書き込みの手段を持たず、保存するのは人です。
+
+記録は `~/.local/state/familiar/runs/` に 14 日間残ります。メールや Slack の本文を含みます。
+
 ## 必要なもの
 - macOS 13 以降（Apple Silicon）
 - [Claude Code](https://claude.com/claude-code) が `~/.local/bin/claude` にあり、使うコネクタが認証済みであること

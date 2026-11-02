@@ -199,8 +199,9 @@ fn set_hotkey(app: AppHandle, state: State<Mutex<Hotkey>>, keys: String) -> Resu
 fn context_menu(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     let build = || -> tauri::Result<()> {
         let settings = MenuItem::with_id(&app, "settings", "設定…", true, None::<&str>)?;
+        let review = MenuItem::with_id(&app, "review", "見回りの記録…", true, None::<&str>)?;
         let quit = MenuItem::with_id(&app, "quit", "familiar を終了", true, None::<&str>)?;
-        window.popup_menu(&Menu::with_items(&app, &[&settings, &PredefinedMenuItem::separator(&app)?, &quit])?)
+        window.popup_menu(&Menu::with_items(&app, &[&review, &settings, &PredefinedMenuItem::separator(&app)?, &quit])?)
     };
     build().map_err(|e| e.to_string())
 }
@@ -283,7 +284,23 @@ fn open_settings(app: &AppHandle) -> tauri::Result<()> {
         panel.hide()?;
         app.emit("panel-closed", ())?;
     }
+    app.get_webview_window("review").unwrap().hide()?;
     app.emit("settings-open", ())
+}
+
+/// Opens the run log and the conversation about it, in the same spot as the other large bubbles.
+#[tauri::command]
+fn show_review(app: AppHandle) -> Result<(), String> { open_review(&app).map_err(|e| e.to_string()) }
+
+fn open_review(app: &AppHandle) -> tauri::Result<()> {
+    let panel = app.get_webview_window("panel").unwrap();
+    if panel.is_visible()? {
+        panel.hide()?;
+        app.emit("panel-closed", ())?;
+    }
+    app.get_webview_window("settings").unwrap().hide()?;
+    app.get_webview_window("setup").unwrap().hide()?;
+    app.emit("review-open", ())
 }
 
 /// Opens the conversation with the agent in the spot the settings bubble uses.
@@ -296,6 +313,7 @@ fn show_setup(app: AppHandle) -> Result<(), String> {
             app.emit("panel-closed", ())?;
         }
         app.get_webview_window("settings").unwrap().hide()?;
+        app.get_webview_window("review").unwrap().hide()?;
         app.emit("setup-open", ())
     };
     show().map_err(|e| e.to_string())
@@ -305,6 +323,7 @@ fn show_setup(app: AppHandle) -> Result<(), String> {
 fn hide_settings(app: AppHandle) -> Result<(), String> {
     app.get_webview_window("settings").unwrap().hide().map_err(|e| e.to_string())?;
     app.get_webview_window("setup").unwrap().hide().map_err(|e| e.to_string())?;
+    app.get_webview_window("review").unwrap().hide().map_err(|e| e.to_string())?;
     app.emit("settings-closed", ()).map_err(|e| e.to_string())
 }
 
@@ -351,7 +370,7 @@ fn live() -> String {
 /// Runs the familiar CLI. Accepting takes seconds, so this stays off the main thread.
 #[tauri::command]
 async fn familiar(args: Vec<String>) -> Result<String, String> {
-    const ALLOWED: [&str; 5] = ["list", "accept", "dismiss", "snooze", "setup"];
+    const ALLOWED: [&str; 8] = ["list", "accept", "dismiss", "snooze", "setup", "runs", "log", "review"];
     if !args.first().is_some_and(|c| ALLOWED.contains(&c.as_str())) {
         return Err("command not allowed".into());
     }
@@ -419,9 +438,9 @@ fn show_panel(app: AppHandle) -> Result<(), String> {
 
 /// A large bubble (suggestions or settings) asks for its height once its content is laid out, then appears at that size.
 #[tauri::command]
-fn fit_panel(app: AppHandle, window: WebviewWindow, height: f64) -> Result<(), String> {
+fn fit_panel(app: AppHandle, window: WebviewWindow, height: f64, width: Option<f64>) -> Result<(), String> {
     let (main, win) = (app.get_webview_window("main").unwrap(), window);
-    let size = LogicalSize::new(PANEL_WIDTH, height);
+    let size = LogicalSize::new(width.unwrap_or(PANEL_WIDTH), height);
     win.set_size(size).map_err(|e| e.to_string())?;
     place(&main, &win, size.to_physical(main.scale_factor().map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())?;
@@ -444,10 +463,11 @@ fn main() {
         }).build())
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => { let _ = open_settings(app); }
+            "review" => { let _ = open_review(app); }
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, show_setup])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, show_setup, show_review])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
@@ -471,12 +491,14 @@ fn main() {
             float(&app.get_webview_window("panel").unwrap(), None, true)?;
             float(&app.get_webview_window("settings").unwrap(), None, true)?;
             float(&app.get_webview_window("setup").unwrap(), None, true)?;
+            float(&app.get_webview_window("review").unwrap(), None, true)?;
 
             let bubble = app.get_webview_window("bubble").unwrap();
             bubble.set_ignore_cursor_events(true)?;
             let panel = app.get_webview_window("panel").unwrap();
             let settings = app.get_webview_window("settings").unwrap();
             let setup = app.get_webview_window("setup").unwrap();
+            let review = app.get_webview_window("review").unwrap();
             let main = win.clone();
             win.on_window_event(move |e| {
                 if let WindowEvent::Moved(_) = e {
@@ -484,6 +506,7 @@ fn main() {
                     let _ = place_bubble(&main, &panel);
                     let _ = place_bubble(&main, &settings);
                     let _ = place_bubble(&main, &setup);
+                    let _ = place_bubble(&main, &review);
                 }
             });
             Ok(())

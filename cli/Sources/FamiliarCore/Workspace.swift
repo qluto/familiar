@@ -39,6 +39,19 @@ public struct Workspace {
         return try String(contentsOf: file(name), encoding: .utf8)
     }
 
+    /// 指示と記憶を書き換える。書き換える前の版を 1 つ残し、人が戻せるようにする。
+    func replace(_ changes: [String: String]) throws {
+        guard (changes["USER.md"]?.count ?? 0) <= Self.userLimit, (changes["MEMORY.md"]?.count ?? 0) <= Self.memoryLimit else {
+            throw FamiliarError.failed("内容が上限を超えたので保存しませんでした。短くするよう伝えてください")
+        }
+        for (name, text) in changes {
+            if let old = try? String(contentsOf: file(name), encoding: .utf8) {
+                try old.write(to: file("memory/previous-\(name)"), atomically: true, encoding: .utf8)
+            }
+            try text.write(to: file(name), atomically: true, encoding: .utf8)
+        }
+    }
+
     private func optional(_ name: String) -> String {
         (try? String(contentsOf: file(name), encoding: .utf8)) ?? ""
     }
@@ -102,7 +115,7 @@ struct DreamAgent: AgentRun {
     /// 整理に要るものは全てプロンプトにある。MCP の定義は 25 万トークンほどあるので読み込まない。
     func run(prompt: String, schema: String) throws -> RunOutcome {
         let args = ClaudeRunner.baseArguments(model: "sonnet", schema: schema, maxTurns: 3, budget: "0.5") + ["--tools", "", "--strict-mcp-config"]
-        return try runner.run(prompt: prompt, arguments: args, cwd: cwd)
+        return try runner.run(prompt: prompt, arguments: args, cwd: cwd, label: "dream")
     }
 }
 
