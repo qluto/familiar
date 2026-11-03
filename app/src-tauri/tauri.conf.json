@@ -114,5 +114,13 @@
     "resources": {
       "../../prompts/": "prompts/"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1OUM3MjBEQUQ3OEU4NDcKUldSSDZIaXREWEtjZGFMeWJVb280VXpqVGtjSlFHVXVxOUpiVTNHd2dzQjBhQVBnMmloaXpkTU4K",
+      "endpoints": [
+        "https://github.com/qluto/familiar/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

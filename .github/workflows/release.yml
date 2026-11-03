@@ -20,6 +20,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         run: |
+          # 公開鍵のないアプリを配ると、その版からは更新を確かめられない
+          node -e 'process.exit(require("./app/src-tauri/tauri.conf.json").plugins.updater.pubkey ? 0 : 1)' \
+            || { echo "tauri.conf.json に更新の公開鍵がありません。app/setup-updater-key.sh を実行してください"; exit 1; }
           swift test --package-path cli
           node app/qa_graph.mjs
           node app/qa_markdown.mjs
@@ -31,7 +34,10 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: cargo tauri build
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # 自動更新用の署名付きアーカイブも作る。手元の install.sh は鍵なしで作れるよう、CI でだけ有効にする
+        run: cargo tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
       - name: Notarize and staple the dmg
         run: |
           dmg=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg)
@@ -44,8 +50,28 @@ jobs:
           name: familiar-dmg
           path: app/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+      - name: Describe the update
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          bundle=app/src-tauri/target/release/bundle/macos
+          node -e '
+            const fs = require("fs");
+            const [tag, sig] = process.argv.slice(1);
+            fs.writeFileSync(process.env.RUNNER_TEMP + "/latest.json", JSON.stringify({
+              version: tag.replace(/^v/, ""),
+              pub_date: new Date().toISOString(),
+              platforms: { "darwin-aarch64": {
+                signature: fs.readFileSync(sig, "utf8"),
+                url: `https://github.com/qluto/familiar/releases/download/${tag}/familiar.app.tar.gz`,
+              } },
+            }, null, 2));
+          ' "$GITHUB_REF_NAME" "$bundle/familiar.app.tar.gz.sig"
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" app/src-tauri/target/release/bundle/dmg/*.dmg --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            app/src-tauri/target/release/bundle/dmg/*.dmg \
+            app/src-tauri/target/release/bundle/macos/familiar.app.tar.gz \
+            "$RUNNER_TEMP/latest.json"

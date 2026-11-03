@@ -373,4 +373,7 @@ function startPolling() {
   startHotkey();
   startSettings();
   life();
+  // 自動更新で再起動したあと、一度だけ知らせる
+  const updated = tauri && await tauri.core.invoke("just_updated");
+  if (updated) say(`バージョン ${updated} になりました`);
 })();

@@ -10,6 +10,8 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+mod update;
+
 const BUBBLE_OVERLAP: f64 = 73.0; // logical px the bubble overlaps the mascot window, so the tail reaches her
 const BUBBLE_GAP: f64 = 12.0; // logical px between the bubble and the bottom screen edge
 const PANEL_WIDTH: f64 = 500.0;
@@ -108,10 +110,15 @@ fn register_agents() -> std::io::Result<()> {
 }
 
 /// Login start and Launchpad can both launch the app. Only the first one stays; the lock lasts as long as the process.
+/// A copy started by an update waits a little, because the old one exits only after starting it.
 fn acquire_single_instance() -> Option<fs::File> {
     fs::create_dir_all(state_dir()).ok()?;
     let lock = fs::File::create(state_dir().join("mascot.lock")).ok()?;
-    (unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0).then_some(lock)
+    for _ in 0..50 {
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 { return Some(lock); }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    None
 }
 
 #[tauri::command]
@@ -432,13 +439,14 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, _, event| {
             if event.state() == ShortcutState::Pressed { let _ = app.emit_to("main", "hotkey", ()); }
         }).build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => { let _ = open_settings(app); }
             "talk" => { let _ = app.emit_to("main", "talk", ()); }
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
@@ -474,6 +482,7 @@ fn main() {
                     let _ = place_bubble(&main, &settings);
                 }
             });
+            update::start(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

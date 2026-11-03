@@ -308,3 +308,12 @@ Please confirm: (1) May I distribute the original and edited clips publicly in t
 - eval 11 件: haiku 2 回と sonnet 1 回で全件合格（haiku 約 $0.02、sonnet 約 $0.37）。最初の不合格 2 件は、ケースに CI と依頼元の内容が欠けていたため。モデルの判断は妥当だった
 - 実物: 一時の状態で採用 → 計画 → 承認を通し、Linear に QLU-9（Qluto、自分が担当、Low、確かめ方と報告のお願い入り）ができた。続く見回りは QLU-9 を `get_issue` と `list_comments` で読み、動きがないので何も返さなかった
 - 整理の実物: 同じ種類の却下 2 回と明言 1 回から、HEARTBEAT.md の変更案が会話に出た。ファイルは書き換えていない
+
+## 自動更新（2026-11-03）
+- [x] tauri-plugin-updater を入れ、`/Applications` のアプリだけが起動 1 分後と 6 時間ごとに確かめる
+- [x] 裏で入れ替え、会話と設定が閉じていて 2 分操作がないときに `open -n` で再起動。新しい方は古い方のロックを待つ
+- [x] 再起動のあと、キャラクターが新しい版を 1 回だけ知らせる
+- [x] CI で更新用アーカイブを作り、`latest.json` と一緒にリリースへ載せる
+- [x] 使い捨ての鍵でリリースビルドし、アーカイブと署名の場所、`latest.json` の生成を確認
+- [ ] 鍵の作成と secret の登録（`app/setup-updater-key.sh`。利用者が実行する）
+- [ ] 0.1.6 を手で入れたあと、0.1.7 への自動更新を実物で確かめる
