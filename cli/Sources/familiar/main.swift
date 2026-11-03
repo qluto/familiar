@@ -60,6 +60,7 @@ func printReport(_ report: ScanReport) {
 func printState(_ state: Conversation.State) throws {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = .sortedKeys // 読むたびに順番が変わると、画面が変更ありと判断する
     print(String(decoding: try encoder.encode(state), as: UTF8.self))
 }
 

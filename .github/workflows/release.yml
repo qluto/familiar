@@ -22,6 +22,7 @@ jobs:
         run: |
           swift test --package-path cli
           node app/qa_graph.mjs
+          node app/qa_markdown.mjs
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
       - name: Build, sign and notarize the app

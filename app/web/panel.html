@@ -3,16 +3,56 @@
 <link rel="stylesheet" href="sheet.css">
 <style>
 #b{height:100%}
-main{display:flex;flex-direction:column;gap:8px}
-.line{white-space:pre-wrap;line-height:1.6;max-width:90%;user-select:text;-webkit-user-select:text}
-.you{align-self:flex-end;background:var(--tint);border-radius:10px;padding:4px 10px}
+main{display:flex;flex-direction:column;gap:12px;flex:1 1 0}
+#shelf{flex:none;max-height:250px;overflow-y:auto;display:grid;gap:6px;padding:8px 18px;border-top:1.5px dashed var(--edge);background:var(--tint);scrollbar-width:thin}
+#shelf[hidden]{display:none}
+#shelf.reading{max-height:70%}
+#shelf-title{font-size:12px;font-weight:600;color:var(--sub)}
+#shelf article{background:var(--paper)}
+#shelf article.compact .meta{display:none}
+.card-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card-top .meta{white-space:nowrap}
+.topic{display:flex;flex-direction:column;gap:6px;background:var(--tint);border-radius:10px;padding:6px 10px}
+.topic h3{color:var(--accent)}
+.topic .you{background:var(--paper)}
+.quiet{font-size:12px;color:var(--sub)}
+.said-list{display:grid;gap:4px;margin-top:3px}
+details.talked{font-size:12px;color:var(--sub)}
+details.talked summary{cursor:pointer}
+.line{white-space:pre-wrap;line-height:1.75;max-width:92%;line-break:strict;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.line:has(> .md){white-space:normal;max-width:100%}
+.you{align-self:flex-end;background:var(--tint);border-radius:12px;padding:6px 12px;margin:4px 0}
+/* 段落の間は行間より広く、見出しは前の段落から離して次の内容に寄せる */
+.md{display:grid;gap:9px;line-height:1.75;line-break:strict;overflow-wrap:anywhere;min-width:0;user-select:text;-webkit-user-select:text}
+.md p{margin:0}
+.md h4{margin:7px 0 -5px;font-size:13.5px;font-weight:700;line-height:1.5}
+.md h4:first-child{margin-top:0}
+.md ul{margin:0;padding:0;list-style:none;display:grid;gap:3px}
+.md li{display:flex;gap:6px}
+.md-mark{flex:none;min-width:1.05em;color:var(--sub);font-variant-numeric:tabular-nums}
+.md-item{min-width:0}
+.md strong{font-weight:700}
+.md em{font-style:normal;color:var(--accent)}
+.md code{font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--tint);border-radius:4px;padding:1px 4px}
+.md pre{margin:0;overflow-x:auto;white-space:pre}
+.md blockquote{display:grid;gap:6px;color:var(--sub);padding-left:10px;border-left:2px solid var(--edge)}
+.md hr{width:100%;border:0;border-top:1px solid var(--edge);margin:3px 0}
+.md-link{all:unset;cursor:pointer;color:var(--accent);text-decoration:underline;overflow-wrap:anywhere}
+.md-link:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.md-table{overflow-x:auto}
+.md table{border-collapse:collapse;font-size:12.5px;line-height:1.55}
+.md th,.md td{border:1px solid var(--edge);padding:3px 8px;text-align:left;vertical-align:top}
+.md th{background:var(--tint);font-weight:600}
+.topic .md code,.topic .md th{background:var(--paper)}
+#shelf .md{gap:7px;font-size:13px;line-height:1.7}
+.said-list b{display:block;margin-top:4px}
 .wait{color:var(--sub)}
 .error{color:var(--warn);white-space:pre-wrap}
 details.scan{font-size:12px;color:var(--sub);user-select:text;-webkit-user-select:text}
 details.scan summary{cursor:pointer}
 details.entry{margin:3px 0 0 12px}
 pre{margin:3px 0 0;padding:6px 8px;border-radius:8px;background:var(--tint);color:var(--ink);white-space:pre-wrap;word-break:break-word;font:11.5px/1.5 ui-monospace,Menlo,monospace}
-.said{margin:3px 0 0 12px;color:var(--ink);white-space:pre-wrap}
+.said{margin:3px 0 0 12px;color:var(--ink)}
 #cards{display:flex;flex-direction:column;gap:8px}
 #cards:empty{display:none}
 article{border:1.5px solid var(--edge);border-radius:12px;padding:9px 12px;display:grid;gap:5px}
@@ -25,7 +65,8 @@ p{margin:0}
 .link{all:unset;cursor:pointer;color:var(--accent);text-decoration:underline}
 blockquote{margin:0;padding-left:8px;border-left:2px solid var(--edge)}
 .details{font-size:13px;white-space:pre-wrap}
-.question,.plan{white-space:pre-wrap;font-weight:600;color:var(--accent)}
+.question{color:var(--accent)}
+.plan{font-size:13px;border-top:1px solid var(--edge);padding-top:6px}
 .diff{font:11.5px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word}
 .add{background:#e6efdf}
 .del{background:#f6e3dd;text-decoration:line-through}
@@ -34,7 +75,9 @@ h3{margin:0;font-size:12px}
 .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px}
 .actions button,form button,.chip button{font:inherit;font-size:12.5px;border:1.5px solid var(--edge);background:transparent;color:var(--ink);border-radius:999px;padding:3px 13px;cursor:pointer}
 .actions .go,#send{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
+.actions .link{all:unset;cursor:pointer;margin-left:auto;font-size:12px;color:var(--accent);text-decoration:underline}
 .actions .talk{margin-left:auto;color:var(--sub)}
+.actions .link + .talk{margin-left:6px}
 .note{font-size:12px;color:var(--warn);white-space:pre-wrap}
 button:disabled{opacity:.5;cursor:default}
 footer{flex:none;padding:8px 18px 12px;display:grid;gap:5px;border-top:1.5px dashed var(--edge)}
@@ -48,12 +91,12 @@ input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radiu
 <body><div id="b">
 <header><span id="h">familiar</span><span><button id="settings" class="icon" aria-label="設定">⚙︎</button><button id="close" class="icon" aria-label="閉じる">×</button></span></header>
 <main id="m">
-  <div id="thread" role="log" style="display:flex;flex-direction:column;gap:8px"></div>
-  <div id="cards"></div>
+  <div id="thread" role="log" style="display:flex;flex-direction:column;gap:12px"></div>
 </main>
+<section id="shelf" aria-label="判断待ち" hidden><div id="shelf-title"></div><div id="cards"></div></section>
 <footer>
   <div id="chip" hidden><span id="chip-text"></span><button id="chip-clear" class="icon" aria-label="話題を外す">×</button></div>
   <form id="f"><input id="text" aria-label="話す" placeholder="話しかける" autocomplete="off"><button id="send">送る</button></form>
 </footer>
 <svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
-</div><script src="panel.js"></script></body></html>
+</div><script src="markdown.js"></script><script src="panel.js"></script></body></html>

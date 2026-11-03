@@ -4,7 +4,8 @@ import Foundation
 public enum Dedupe {
     public static func keys(for sources: [Source]) -> [String] {
         var seen = Set<String>()
-        return sources.map { normalize($0.url) }.filter { seen.insert($0).inserted }
+        // 会話から生まれた提案には URL がないので、根拠の文で見分ける
+        return sources.map { $0.url.isEmpty ? "excerpt:\($0.excerpt)" : normalize($0.url) }.filter { seen.insert($0).inserted }
     }
 
     public static func normalize(_ raw: String) -> String {

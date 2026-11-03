@@ -45,6 +45,7 @@ public struct Config: Codable {
     public var endHour: Int?
     public var weekdays: [Int]?
     public var meetingLeadMinutes: Int?
+    public var afterMeetingMinutes: [Int]?
 
     public static func load(_ paths: Paths) -> Config? {
         (try? Data(contentsOf: paths.config)).flatMap { try? JSONDecoder().decode(Config.self, from: $0) }

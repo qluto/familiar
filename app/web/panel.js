@@ -1,8 +1,8 @@
-// キャラクターとの 1 本の会話。見回りの結果も提案も計画も、ここに並ぶ。
+// キャラクターとの 1 本の会話。出来事は流れに、判断待ちは棚に置く。
 // 文面はメールや Slack 由来の信頼できないデータなので、必ず textContent で入れる。
 const { core, event } = window.__TAURI__;
 const $ = (id) => document.getElementById(id);
-const main = $("m"), thread = $("thread"), cards = $("cards"), heading = $("h");
+const main = $("m"), thread = $("thread"), cards = $("cards"), shelf = $("shelf"), heading = $("h");
 const text = $("text"), send = $("send"), chip = $("chip");
 const close = () => core.invoke("hide_panel");
 $("close").onclick = close;
@@ -11,10 +11,13 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 const familiar = (...args) => core.invoke("familiar", { args });
 
 const REFRESH_MS = 3000;
-let lastItem = null, lastCards = "", timer = null, busy = false, opened = false, generation = 0, suggestions = [], proposal = [];
+let lastThread = "", lastCards = "", timer = null, busy = false, opened = false, generation = 0, suggestions = [], proposal = [], past = [];
+const unfolded = new Set(); // 開いている畳みと詳細。描き直しても保つ
+const logs = new Map(); // 読み終えた見回りの記録。描き直しても読み直さない
 const STALE_MS = 11 * 60 * 1000; // 実行の上限を過ぎても進んでいなければ、止まったとみなす
 let topic = null; // 話題にしている提案か実行 { id, label }
 
+const rich = (body) => Markdown.render(body, (url) => core.invoke("open_url", { url }));
 function el(tag, props = {}, ...children) {
   const n = document.createElement(tag);
   Object.assign(n, props);
@@ -42,29 +45,81 @@ function setBusy(on) {
 }
 
 // ── 会話 ─────────────────────────
-function entry(e) {
-  if (e.kind === "text") return el("div", { className: "said", textContent: e.text });
-  return el("details", { className: "entry", open: e.kind === "final" || e.kind === "error" },
-    el("summary", { textContent: e.title }), el("pre", { textContent: e.text }));
+const isOpen = (s) => s.status === "new" || s.status === "snoozed" || s.status === "accepting";
+const hhmm = (at) => new Date(at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+function entry(e, key) {
+  if (e.kind === "text") return el("div", { className: "said" }, rich(e.text));
+  return fold(key, "entry", e.title, (box) => box.append(el("pre", { textContent: e.text })));
 }
-// 見回りは 1 行に畳み、開いたときだけ記録を読む
+// 畳み。中身は開いたときに作り、描き直しても開いたままにする
+function fold(key, className, label, fill) {
+  const box = el("div");
+  const node = el("details", { className, open: unfolded.has(key) }, el("summary", { textContent: label }), box);
+  let filled = false;
+  const open = () => { if (!filled) { filled = true; fill(box); } };
+  node.addEventListener("toggle", () => {
+    if (node.open) { unfolded.add(key); open(); } else unfolded.delete(key);
+  });
+  if (node.open) open(); // 描き直しでは高さを変えないよう、同じ処理の中で中身を入れる
+  return node;
+}
 function scanLine(item) {
   const label = `${clock(item.at)} ${item.text}`;
   if (!item.run) return el("div", { className: "line error", textContent: label });
-  const box = el("div");
-  const node = el("details", { className: "scan" }, el("summary", { textContent: label }), box);
-  node.addEventListener("toggle", async () => {
-    if (!node.open || box.childElementCount) return;
+  const show = (box, entries) => box.append(...entries.map((e, i) => entry(e, `entry:${item.run}:${i}`)), el("div", { className: "actions" },
+    el("button", { className: "talk", textContent: "これについて話す", onclick: () => setTopic({ id: item.run, label: `見回りの記録 ${clock(item.at)}` }) })));
+  return fold(`scan:${item.run}`, "scan", label, async (box) => {
+    if (logs.has(item.run)) return show(box, logs.get(item.run));
     try {
       const entries = JSON.parse(await familiar("log", item.run, "--json"));
-      box.append(...entries.map(entry), el("div", { className: "actions" },
-        el("button", { className: "talk", textContent: "これについて話す", onclick: () => setTopic({ id: item.run, label: `見回りの記録 ${clock(item.at)}` }) })));
+      logs.set(item.run, entries);
+      show(box, entries);
     } catch (e) { box.append(el("div", { className: "error", textContent: String(e) })); }
   });
-  return node;
 }
-const lineOf = (item) => item.role === "scan" ? scanLine(item)
-  : el("div", { className: `line ${item.role === "you" ? "you" : ""}`, textContent: item.text });
+function heartbeat(run) {
+  if (run.length === 1) return scanLine(run[0]);
+  const label = `${clock(run[0].at)}–${hhmm(run.at(-1).at)} 見回り ${run.length} 回、異常なし`;
+  return fold(`beat:${run[0].at}`, "scan", label, (box) => box.append(...run.map(scanLine)));
+}
+// 判断待ちのカードに本文があるときは、同じ文を流れに重ねない
+function talkLine(item, s) {
+  if (s && (s.plan && item.text.endsWith(s.plan) || s.question && item.text === s.question)) {
+    const what = s.plan && item.text.endsWith(s.plan) ? "計画を示しました" : "質問しています";
+    return el("div", { className: "line quiet", textContent: `「${s.draft.title}」の${what}。判断待ちで読めます` });
+  }
+  // 自分の言葉は書いたとおりに見せる
+  if (item.role === "you") return el("div", { className: "line you", textContent: item.text });
+  return el("div", { className: "line" }, rich(item.text));
+}
+function topicRow(s, group) {
+  const pairs = group.filter((i) => i.role === "you").length;
+  if (!isOpen(s)) {
+    const label = `「${s.draft.title}」 ${pairs} 往復 → ${s.status === "accepted" ? "完了" : "見送り"}`;
+    return fold(`topic:${group[0].at}`, "scan", label, (box) => box.append(...group.map((i) => talkLine(i))));
+  }
+  return el("div", { className: "topic" }, el("h3", { textContent: `「${s.draft.title}」について` }), ...group.map((i) => talkLine(i, s)));
+}
+// 履歴を、続いている塊ごとの行にする
+function rows(items) {
+  const known = new Map(suggestions.map((s) => [s.id, s]));
+  const out = [];
+  for (let i = 0; i < items.length;) {
+    const item = items[i];
+    const same = item.role === "scan"
+      ? (o) => o.role === "scan" && o.found === 0 && item.found === 0
+      : (o) => o.role !== "scan" && item.about && o.about === item.about;
+    let end = i + 1;
+    while (end < items.length && same(items[end])) end++;
+    const run = items.slice(i, end);
+    const s = known.get(item.about);
+    if (item.role === "scan") out.push(heartbeat(run));
+    else if (s && run.some((r) => r.role === "you")) out.push(topicRow(s, run));
+    else out.push(...run.map((r) => talkLine(r, s && isOpen(s) ? s : undefined)));
+    i = end;
+  }
+  return out;
+}
 
 // ── カード ───────────────────────
 async function act(args, restore) {
@@ -118,26 +173,33 @@ function acts(s) {
   const snooze = el("button", { textContent: "後で", onclick: () => act(["snooze", s.id]) });
   return [accept, snooze, dismiss("却下"), talk];
 }
-function card(s) {
+function card(s, compact) {
   const d = s.draft;
+  const key = `card:${s.id}`;
+  const shown = unfolded.has(key);
   const sources = el("div", { className: "src" }, ...d.sources.map((src) => el("div", {},
     src.url.startsWith("https://")
       ? el("button", { className: "link", textContent: `${src.kind} を開く`, onclick: () => core.invoke("open_url", { url: src.url }) })
       : src.kind,
     el("blockquote", { textContent: src.excerpt }))));
-  return el("article", { className: topic?.id === s.id ? "selected" : "" },
-    el("h2", { textContent: d.title }),
-    el("div", { className: "meta" },
-      el("span", { className: d.urgency === "high" ? "high" : "", textContent: `緊急度 ${d.urgency}` }),
-      ` ・ ${d.kind} ・ 手間 ${d.effort}`,
-      d.due ? ` ・ 期日 ${d.due}` : "",
+  const talked = past.filter((i) => i.about === s.id && i.role !== "scan");
+  const more = el("button", { className: "link", textContent: shown ? "閉じる" : "詳しく", onclick: () => {
+    if (shown) unfolded.delete(key); else unfolded.add(key);
+    draw(true);
+  } });
+  const actions = el("div", { className: "actions" }, ...acts(s));
+  actions.insertBefore(more, actions.querySelector(".talk"));
+  return el("article", { className: `${topic?.id === s.id ? "selected" : ""} ${compact && !shown ? "compact" : ""}` },
+    el("div", { className: "card-top" }, el("h2", { textContent: d.title }),
+      el("span", { className: `meta ${d.urgency === "high" ? "high" : ""}`, textContent: `緊急度 ${d.urgency}` })),
+    el("div", { className: "meta" }, `${d.kind} ・ 手間 ${d.effort}`, d.due ? ` ・ 期日 ${d.due}` : "",
       s.snoozedUntil ? ` ・ ${clock(s.snoozedUntil)} にまた声をかけます` : ""),
-    el("p", { textContent: d.why }),
-    el("p", { className: "details", textContent: d.details }),
-    sources,
-    ...(s.question ? [el("p", { className: "question", textContent: s.question })] : []),
-    ...(s.plan ? [el("p", { className: "plan", textContent: s.plan })] : []),
-    el("div", { className: "actions" }, ...acts(s)));
+    ...(shown ? [el("p", { textContent: d.why }), el("p", { className: "details", textContent: d.details }), sources] : []),
+    ...(talked.length ? [fold(`talked:${s.id}`, "talked", `話した内容 ${talked.length}`, (box) =>
+      box.append(el("div", { className: "said-list" }, ...talked.map((i) => el("div", {}, el("b", { textContent: i.role === "you" ? "あなた" : "familiar" }), rich(i.text))))))] : []),
+    ...(s.question ? [el("div", { className: "question" }, rich(s.question))] : []),
+    ...(s.plan ? [el("div", { className: "plan" }, rich(s.plan))] : []),
+    actions);
 }
 // 行単位の最長共通部分列
 function diff(before, after) {
@@ -166,34 +228,41 @@ function changeCard(changes) {
       el("button", { textContent: "取り消す", onclick: () => act(["discard"]) })));
 }
 function draw(force) {
-  const key = JSON.stringify([suggestions, proposal, topic?.id ?? null]);
+  const key = JSON.stringify([suggestions.map((s) => [s.id, s.status, s.updatedAt, s.draft.title, s.plan, s.question]), proposal, topic?.id ?? null, past.length]);
   if (!force && key === lastCards) return false;
   lastCards = key;
   const fresh = suggestions.filter((s) => s.status === "new");
-  const later = suggestions.filter((s) => s.status === "snoozed" || s.status === "accepting");
-  cards.replaceChildren(...fresh.map(card), ...later.map(card), ...(proposal.length ? [changeCard(proposal)] : []));
+  const waiting = [...fresh, ...suggestions.filter((s) => s.status === "accepting")];
+  const shown = [...waiting.map((s, i) => card(s, i > 0 && waiting.length >= 3)), ...(proposal.length ? [changeCard(proposal)] : [])];
+  cards.replaceChildren(...shown);
+  shelf.hidden = !shown.length;
+  $("shelf-title").textContent = `判断待ち ${shown.length} 件`;
+  // 計画や差分を読むときは、狭い枠に閉じ込めない
+  shelf.classList.toggle("reading", proposal.length > 0 || waiting.some((s) => s.plan || s.question || unfolded.has(`card:${s.id}`)));
   if (busy) setBusy(true);
   heading.textContent = fresh.length ? `気になることが ${fresh.length} 件あります` : "familiar";
   return true;
 }
 
-const itemKey = (item) => `${item.at}|${item.role}|${item.text}`;
 async function reload() {
   const mine = ++generation;
   const state = JSON.parse(await familiar("thread", "--json"));
   const items = JSON.parse(await familiar("list", "--all", "--json"));
   if (mine !== generation) return state; // あとから始めた読み込みの方が新しい
   const follow = atEnd();
-  // 履歴は末尾の窓で届くので、件数ではなく最後に描いた行を手がかりにする
-  const from = lastItem === null ? -1 : state.items.findLastIndex((i) => itemKey(i) === lastItem);
-  if (from < 0) thread.replaceChildren();
-  const added = state.items.slice(from + 1);
-  thread.append(...added.map(lineOf));
-  if (state.items.length) lastItem = itemKey(state.items.at(-1));
   suggestions = items;
   proposal = state.proposal;
+  past = state.items;
+  // 終わった提案を話題のままにしない
+  const current = suggestions.find((s) => s.id === topic?.id);
+  if (current && !isOpen(current)) { topic = null; chip.hidden = true; }
+  // 出力のキーの順番に左右されないよう、項目を並べて比べる
+  const key = JSON.stringify([state.items.map((i) => [i.at, i.role, i.text, i.run, i.about, i.found]),
+    suggestions.map((s) => [s.id, s.status, s.plan, s.question, s.draft.title])]);
+  const moved = key !== lastThread;
+  if (moved) { lastThread = key; thread.replaceChildren(...rows(state.items)); }
   const changed = draw(false);
-  if (follow && (added.length || changed)) toEnd();
+  if (follow && (moved || changed)) toEnd();
   return state;
 }
 
@@ -210,9 +279,8 @@ $("f").addEventListener("submit", async (e) => {
   const args = s && (s.question || s.plan) ? ["accept", s.id, "--note", words]
     : ["say", "--text", words, ...(about ? ["--about", about.id] : [])];
   thread.lastChild.dataset.pending = "1";
-  const out = await act(args, words);
+  await act(args, words);
   thread.querySelectorAll("[data-pending]").forEach((n) => n.remove());
-  if (out !== undefined && about) setTopic(null);
 });
 // 変換の確定の Enter では送らない
 text.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.isComposing) e.preventDefault(); });

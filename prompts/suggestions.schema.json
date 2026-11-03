@@ -4,7 +4,8 @@
   "required": [
     "coverage",
     "upcoming_events",
-    "suggestions"
+    "suggestions",
+    "revisions"
   ],
   "properties": {
     "coverage": {
@@ -125,7 +126,84 @@
     "upcoming_events": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "revisions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "id",
+          "reason",
+          "title",
+          "why",
+          "details",
+          "urgency",
+          "due"
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "retire",
+              "update"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "why": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "details": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urgency": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              null
+            ]
+          },
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     }
   }

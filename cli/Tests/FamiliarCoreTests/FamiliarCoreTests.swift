@@ -76,8 +76,43 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
 }
 
 @Test func upcomingSkipsUnreadableDates() {
-    let out = ScanOutput(coverage: [], upcoming_events: ["2026-11-02T10:00:00+09:00", "明日"], suggestions: [])
+    let out = ScanOutput(coverage: [], upcoming_events: [
+        .init(start: "2026-11-02T10:00:00+09:00", end: "2026-11-02T10:30:00+09:00"),
+        .init(start: "明日", end: "明日"),
+    ], suggestions: [])
     #expect(out.upcomingDates == [at(2026, 11, 2, 10)])
+    #expect(out.endDates == [at(2026, 11, 2, 10, 30)])
+}
+
+@Test func afterMeetingWaitsForTranscripts() {
+    // 10:00–10:30 の会議。ふだんの見回りは終了直後の 10:32 に済んでいて、書き起こしはまだない
+    let s = Schedule(), end = at(2026, 11, 2, 10, 30)
+    var state = ScheduleState()
+    state.lastAttempt = at(2026, 11, 2, 10, 32)
+    state.ends = [end]
+    #expect(s.decide(now: at(2026, 11, 2, 10, 35), state: state, calendar: tokyo()) == nil)
+    #expect(s.decide(now: at(2026, 11, 2, 10, 42), state: state, calendar: tokyo()) == .afterMeeting)
+    state.lastAttempt = at(2026, 11, 2, 10, 42)
+    #expect(s.decide(now: at(2026, 11, 2, 10, 47), state: state, calendar: tokyo()) == nil)
+    #expect(s.decide(now: at(2026, 11, 2, 10, 57), state: state, calendar: tokyo()) == .afterMeeting)
+    // 作業時間外でも見回る。スリープで大きく過ぎた分は追わない
+    state.lastAttempt = nil
+    state.ends = [at(2026, 10, 31, 21)]
+    #expect(s.decide(now: at(2026, 10, 31, 21, 12), state: state, calendar: tokyo()) == .afterMeeting)
+    #expect(s.decide(now: at(2026, 10, 31, 22, 30), state: state, calendar: tokyo()) == nil)
+}
+
+@Test func endedMeetingsAreKeptUntilFollowedUp() {
+    let s = Schedule(), now = at(2026, 11, 2, 10, 40)
+    let ended = at(2026, 11, 2, 10, 30), old = at(2026, 11, 2, 9), cancelled = at(2026, 11, 2, 15)
+    let next = at(2026, 11, 2, 11)
+    #expect(s.keepEnds(previous: [old, ended, cancelled], reported: [next, next], now: now) == [ended, next])
+}
+
+@Test func scheduleStateReadsOlderFiles() throws {
+    let json = #"{"upcoming":[],"triggered":[],"lastAttempt":"2026-11-02T01:00:00Z"}"#
+    let state = try Store.decoder.decode(ScheduleState.self, from: Data(json.utf8))
+    #expect(state.lastAttempt != nil && state.ends.isEmpty)
 }
 
 @Test func usageCountsOnlyTodaysSuccessfulRuns() {
@@ -354,7 +389,7 @@ let head: Event = ["type": "familiar_run", "label": "scan", "model": "haiku", "s
 let noFiles: [String: Any] = ["soul": NSNull(), "user": NSNull(), "heartbeat": NSNull(), "output": NSNull(), "memory": NSNull()]
 
 func chatTurn(_ files: [String: Any] = [:], suggestions: [[String: Any]] = [], done: Bool = false) -> [String: Any] {
-    ["message": "こうします", "files": noFiles.merging(files) { $1 }, "suggestions": suggestions, "done": done]
+    ["message": "こうします", "files": noFiles.merging(files) { $1 }, "suggestions": suggestions, "revisions": [] as [Any], "about": NSNull(), "done": done]
 }
 
 func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Paths) {
@@ -447,7 +482,8 @@ func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Pat
     _ = try chat.say("準備は？")
     _ = try chat.say("もう一度")
     let items = try Store(paths: paths).load()
-    #expect(items.map(\.draft.title) == ["準備する", "準備する"]) // 話ごとに別の話題として扱う
+    #expect(items.map(\.draft.title) == ["準備する"]) // 同じ根拠の提案は重ねない
+    #expect(items[0].draft.sources[0].url == "") // 受け取る人が開けない内部の識別子を作らない
     #expect(Live.load(paths.live).headline == "準備する")
 }
 
@@ -466,11 +502,17 @@ func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Pat
 
 // MARK: - 計画
 
+func planned(_ message: String, brief: [String: Any]? = nil) -> [String: Any] {
+    let full: [String: Any] = ["title": "題", "background": "経緯", "goal": "やること", "criteria": ["確認できる"], "notes": "",
+                               "references": [["title": "元のスレッド", "url": "https://x.test/1"]]]
+    return ["status": "plan", "message": message, "url": NSNull(), "brief": brief ?? full]
+}
+
 @Test func planWaitsForApprovalThenRuns() throws {
-    let (planner, store, id) = try acceptFixture(FakeAgent(output: ["status": "plan", "message": "issue を作ります", "url": NSNull()]))
+    let (planner, store, id) = try acceptFixture(FakeAgent(output: planned("issue を作ります")))
     #expect(try planner.accept(id: id, note: nil) == "issue を作ります")
     var s = try #require(try store.load().first)
-    #expect(s.status == .new && s.plan == "issue を作ります")
+    #expect(s.status == .new && s.plan?.hasPrefix("issue を作ります") == true && s.brief != nil)
     let runner = Acceptor(paths: store.paths, agent: FakeAgent(output: ["status": "done", "message": "作った", "url": NSNull()]))
     _ = try runner.accept(id: id, note: nil, approve: true)
     s = try #require(try store.load().first)
@@ -495,12 +537,12 @@ final class StageAgent: AgentRun {
 }
 
 @Test func theFirstPassNeverRunsTheWritingStage() throws {
-    let agent = StageAgent(planOutput: ["status": "plan", "message": "作ります", "url": NSNull()])
+    let agent = StageAgent(planOutput: planned("作ります"))
     let (seed, store, id) = try acceptFixture(FakeAgent(output: nil))
     _ = seed
     _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil)
     #expect(agent.planned == 1 && agent.ran == 0)
-    #expect(try store.load().first?.plan == "作ります")
+    #expect(try store.load().first?.plan?.contains("## 達成条件") == true)
     _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil, approve: true)
     #expect(agent.planned == 1 && agent.ran == 1)
 }
@@ -508,7 +550,7 @@ final class StageAgent: AgentRun {
 @Test func theModelCannotReachTheWritingStageOnItsOwn() throws {
     // 計画の段階がどんな答えを返しても、承認なしでは run を呼ばない
     for status in ["plan", "done", "needs_input"] {
-        let agent = StageAgent(planOutput: ["status": status, "message": "m", "url": NSNull()])
+        let agent = StageAgent(planOutput: planned("m").merging(["status": status]) { $1 })
         let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
         _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil)
         #expect(agent.ran == 0)
@@ -517,7 +559,7 @@ final class StageAgent: AgentRun {
 
 @Test func answeringAQuestionAfterApprovalKeepsGoing() throws {
     let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
-    let planner = StageAgent(planOutput: ["status": "plan", "message": "作ります", "url": NSNull()])
+    let planner = StageAgent(planOutput: planned("作ります"))
     _ = try Acceptor(paths: store.paths, agent: planner).accept(id: id, note: nil)
     _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: ["status": "needs_input", "message": "どのチーム？", "url": NSNull()])).accept(id: id, note: nil, approve: true)
     _ = try Acceptor(paths: store.paths, agent: planner).accept(id: id, note: "Qluto")
@@ -527,7 +569,7 @@ final class StageAgent: AgentRun {
 
 @Test func plansAndQuestionsStayInTheHistory() throws {
     let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
-    let planner = StageAgent(planOutput: ["status": "plan", "message": "作ります", "url": NSNull()])
+    let planner = StageAgent(planOutput: planned("作ります"))
     _ = try Acceptor(paths: store.paths, agent: planner).accept(id: id, note: nil)
     #expect(Thread(paths: store.paths).recent(5).last?.text.contains("作ります") == true)
 }
@@ -547,4 +589,197 @@ final class StageAgent: AgentRun {
     let s = Suggestion(draft: draft(), now: Date())
     #expect(try Acceptor.prompt(instructions: "x", suggestion: s).contains("計画の段階"))
     #expect(try !Acceptor.prompt(instructions: "x", suggestion: s, approved: true).contains("計画の段階"))
+}
+
+// MARK: - タスクの定義
+
+final class PromptAgent: AgentRun {
+    var prompts: [String] = []
+    var output: [String: Any]
+    init(output: [String: Any]) { self.output = output }
+    func run(prompt: String, schema: String) throws -> RunOutcome {
+        prompts.append(prompt)
+        return RunOutcome(exitCode: 0, result: ["structured_output": output])
+    }
+}
+
+@Test func theApprovedBriefIsWhatGetsWritten() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: planned("作ります"))).accept(id: id, note: nil)
+    let runner = PromptAgent(output: ["status": "done", "message": "作った", "url": NSNull(), "brief": NSNull()])
+    _ = try Acceptor(paths: store.paths, agent: runner).accept(id: id, note: nil, approve: true)
+    let prompt = try #require(runner.prompts.first)
+    #expect(prompt.contains("題: 題") && prompt.contains("## 背景\n経緯") && prompt.contains("- [ ] 確認できる"))
+    #expect(prompt.contains("[元のスレッド](https://x.test/1)"))
+}
+
+@Test func anIncompleteBriefCannotBeApproved() throws {
+    let incomplete: [[String: Any]] = [
+        ["title": "題", "background": " ", "goal": "g", "criteria": ["c"], "notes": "", "references": [] as [Any]],
+        ["title": "題", "background": "b", "goal": "g", "criteria": [] as [Any], "notes": "", "references": [] as [Any]],
+        ["title": "題", "background": "b", "goal": "g", "criteria": ["c"], "notes": "",
+         "references": [["title": "記録", "url": "familiar://chat/1"]]],
+    ]
+    for brief in incomplete {
+        let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+        _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: planned("作ります", brief: brief))).accept(id: id, note: nil)
+        let s = try #require(try store.load().first)
+        #expect(s.plan == nil && s.brief == nil && s.question != nil)
+        #expect(throws: (any Error).self) {
+            _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: nil)).accept(id: id, note: nil, approve: true)
+        }
+    }
+}
+
+@Test func aPlanWithoutABriefIsMadeAgainBeforeWriting() throws {
+    // 更新前に作られた承認待ちの計画
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    try store.transition(id) { $0.plan = "古い計画" }
+    let agent = StageAgent(planOutput: planned("作ります"))
+    _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil, approve: true)
+    #expect(agent.planned == 1 && agent.ran == 0)
+    // 新しい定義も、改めて承認されるまでは書き込まない
+    _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: "もう少し")
+    #expect(agent.planned == 2 && agent.ran == 0)
+}
+
+@Test func planningSeesTheConversationButNotPrivateLinks() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    try store.transition(id) { $0.draft.sources[0].url = "familiar://chat/abc" }
+    try Thread(paths: store.paths).append("you", "目的は移行の判断材料を作ること")
+    try Thread(paths: store.paths).append("scan", "見回りの結果", run: "r1")
+    let agent = PromptAgent(output: planned("作ります"))
+    _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil)
+    let prompt = try #require(agent.prompts.first)
+    #expect(prompt.contains("目的は移行の判断材料を作ること"))
+    #expect(!prompt.contains("familiar://") && !prompt.contains("見回りの結果") && !prompt.contains("runs/"))
+}
+
+@Test func theAcceptSchemaIsValidJSON() throws {
+    let schema = try JSONSerialization.jsonObject(with: Data(Acceptor.schema.utf8)) as? [String: Any]
+    #expect((schema?["required"] as? [String])?.contains("brief") == true)
+}
+
+@Test func aBriefReadsOnItsOwn() {
+    let brief = Brief(title: "t", background: "b", goal: "g", criteria: ["a", "c"], notes: "", references: [])
+    #expect(brief.body == "## 背景\nb\n\n## やること\ng\n\n## 達成条件\n- [ ] a\n- [ ] c")
+}
+
+// MARK: - 提案の見直し
+
+func revision(_ action: String, _ id: String, title: String? = nil) -> Revision {
+    Revision(action: action, id: id, reason: "確かめた", title: title, why: nil, details: nil, urgency: nil, due: nil)
+}
+
+@Test func retiringLeavesAReasonButNoUserDecision() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    let done = try store.revise([revision("retire", id)], seenAt: Date().addingTimeInterval(1))
+    #expect(done.count == 1 && done[0].status == .dismissed && done[0].dismissReason == "確かめた")
+    #expect(Thread(paths: store.paths).recent(1)[0].text.contains("取り下げました"))
+    #expect(Live.load(store.paths.live).pending == 0)
+    #expect(Workspace(paths: store.paths).entries(since: nil).contains { $0.contains("familiar が取り下げました") })
+    #expect(try store.merge([draft()]).isEmpty) // 同じ出典は出し直さない
+}
+
+@Test func updatingDropsThePlanSoOldContentCannotBeApproved() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: planned("作ります"))).accept(id: id, note: nil)
+    try store.revise([revision("update", id, title: "新しい題")], seenAt: Date().addingTimeInterval(1))
+    let s = try #require(try store.load().first)
+    #expect(s.draft.title == "新しい題" && s.draft.why == "w" && s.plan == nil && s.brief == nil)
+    #expect(throws: (any Error).self) {
+        _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: nil)).accept(id: id, note: nil, approve: true)
+    }
+}
+
+@Test func revisionsLeaveAloneWhatThePersonTouchedOrIsRunning() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    let before = Date().addingTimeInterval(-60)
+    #expect(try store.revise([revision("retire", id)], seenAt: before).isEmpty)
+    try store.transition(id) { $0.status = .accepting }
+    #expect(try store.revise([revision("retire", id), revision("update", id), revision("retire", "nothing")], seenAt: Date().addingTimeInterval(1)).isEmpty)
+    #expect(try store.load().first?.status == .accepting)
+}
+
+@Test func onlyTheConversationCanRestore() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    let later = Date().addingTimeInterval(1)
+    try store.revise([revision("retire", id)], seenAt: later, now: later)
+    let after = later.addingTimeInterval(1)
+    #expect(try store.revise([revision("restore", id)], seenAt: after, now: after).isEmpty)
+    #expect(try store.revise([revision("restore", id)], seenAt: after, restoring: true, now: after).first?.status == .new)
+}
+
+@Test func theScanAndTheRefinerSeeWhatTheyCanRevise() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    let known = try store.load()
+    #expect(Scanner.prompt(base: "", cursor: [:], known: known, now: Date()).contains("\"id\":\"\(id)\""))
+    let text = try Scanner.refinePrompt(base: "", candidates: [], revisions: [revision("retire", id)], open: known)
+    #expect(text.contains("\"action\":\"retire\"") && text.contains("\"id\":\"\(id)\""))
+}
+
+@Test func aChatTurnCanRetireAnOpenSuggestion() throws {
+    let (_, _, paths) = try chatFixture(chatTurn())
+    let id = try Store(paths: paths).merge([draft()])[0].id
+    var turn = chatTurn()
+    turn["revisions"] = [["action": "retire", "id": id, "reason": "完了済み", "title": NSNull(), "why": NSNull(), "details": NSNull(), "urgency": NSNull(), "due": NSNull()]]
+    let state = try Conversation(paths: paths, agent: FakeAgent(output: turn)).say("もう終わった？", now: Date().addingTimeInterval(1))
+    #expect(try Store(paths: paths).load().first?.status == .dismissed)
+    #expect(state.items.last?.text.contains("完了済み") == true)
+}
+
+@Test func onlyTheChatSchemaAllowsRestore() throws {
+    let (_, _, paths) = try chatFixture(chatTurn())
+    let chat = try Conversation.schema(paths: paths)
+    let scan = try String(contentsOf: paths.prompts.appendingPathComponent("suggestions.schema.json"), encoding: .utf8)
+    #expect(chat.contains("restore") && !scan.contains("restore"))
+}
+
+// MARK: - 会話の履歴
+
+@Test func quietScansDoNotPushTheConversationOut() throws {
+    let thread = Thread(paths: tempPaths())
+    try thread.append("you", "覚えておいて")
+    for _ in 0..<100 { try thread.append("scan", "見回りました。何もありませんでした", run: "r", found: 0) }
+    #expect(thread.conversation().map(\.role) == ["you", "scan"])
+    #expect(thread.recent(1).count == 101 && thread.recent(1).first?.text == "覚えておいて")
+}
+
+@Test func aScanThatFoundSomethingStaysInTheConversation() throws {
+    let thread = Thread(paths: tempPaths())
+    try thread.append("scan", "見回りました。2 件見つけました", run: "r", found: 2)
+    try thread.append("scan", "見回りました。何もありませんでした", run: "s", found: 0)
+    #expect(thread.conversation().map(\.run) == ["r", "s"])
+}
+
+@Test func planningReceivesEverythingSaidAboutTheSuggestion() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    let thread = Thread(paths: store.paths)
+    try thread.append("you", "条件は 5% 引き", about: id)
+    for i in 0..<40 { try thread.append("you", "別の話 \(i)") }
+    let agent = PromptAgent(output: planned("作ります"))
+    _ = try Acceptor(paths: store.paths, agent: agent).accept(id: id, note: nil)
+    #expect(agent.prompts.first?.contains("条件は 5% 引き") == true)
+}
+
+@Test func theModelCanTieWordsToASuggestion() throws {
+    let (_, _, paths) = try chatFixture(chatTurn())
+    let id = try Store(paths: paths).merge([draft()])[0].id
+    var turn = chatTurn()
+    turn["about"] = id
+    let state = try Conversation(paths: paths, agent: FakeAgent(output: turn)).say("あれは来週でいい")
+    #expect(state.items.suffix(2).allSatisfy { $0.about == id })
+    turn["about"] = "unknown"
+    let other = try Conversation(paths: paths, agent: FakeAgent(output: turn)).say("別の話")
+    #expect(other.items.suffix(2).allSatisfy { $0.about == nil })
+}
+
+@Test func wordsThatBecomeASuggestionAreTiedToIt() throws {
+    let source: [String: Any] = ["kind": "chat", "url": "", "excerpt": "e"]
+    let task: [String: Any] = ["title": "準備する", "why": "w", "sources": [source], "urgency": "low", "effort": "small",
+                               "kind": "other", "details": "d", "due": NSNull(), "confidence": 0.5]
+    let (chat, _, paths) = try chatFixture(chatTurn(suggestions: [task]))
+    let state = try chat.say("準備しないと")
+    let id = try Store(paths: paths).load()[0].id
+    #expect(state.items.suffix(2).allSatisfy { $0.about == id })
 }

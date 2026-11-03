@@ -10,17 +10,23 @@ public struct ThreadItem: Codable, Equatable {
     public var run: String?
     /// 話題にした提案や実行
     public var about: String?
+    /// 見回りが見つけた件数。0 なら何もなかった回で、会話の窓には数えない
+    public var found: Int?
+
+    var isQuietScan: Bool { role == "scan" && found == 0 }
 }
 
 /// キャラクターとの 1 本の会話の記録。複数のプロセスが足すので、1 行ずつ追記する。
 public struct Thread {
-    static let promptItems = 30
+    public static let promptItems = 30
+    /// 画面と AI が見る行数の上限。何もなかった見回りが長く続いても読み込みを重くしない
+    static let windowLimit = 2000
     let url: URL
 
     public init(paths: Paths) { url = paths.state.appendingPathComponent("thread.jsonl") }
 
-    public func append(_ role: String, _ text: String, run: String? = nil, about: String? = nil, now: Date = Date()) throws {
-        let line = try Store.encoder.encode(ThreadItem(at: now, role: role, text: text, run: run, about: about)) + Data([0x0A])
+    public func append(_ role: String, _ text: String, run: String? = nil, about: String? = nil, found: Int? = nil, now: Date = Date()) throws {
+        let line = try Store.encoder.encode(ThreadItem(at: now, role: role, text: text, run: run, about: about, found: found)) + Data([0x0A])
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
         guard fd >= 0 else { throw FamiliarError.failed("thread.jsonl を開けません") }
@@ -28,10 +34,36 @@ public struct Thread {
         try handle.write(contentsOf: line)
     }
 
-    public func recent(_ limit: Int) -> [ThreadItem] {
+    private func all() -> [ThreadItem] {
         let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        return text.split(separator: "\n").suffix(limit).compactMap { try? Store.decoder.decode(ThreadItem.self, from: Data($0.utf8)) }
+        return text.split(separator: "\n").compactMap { line in
+            guard var item = try? Store.decoder.decode(ThreadItem.self, from: Data(line.utf8)) else { return nil }
+            // 件数を持つ前の見回り行
+            if item.role == "scan", item.found == nil, item.text == "見回りました。何もありませんでした" { item.found = 0 }
+            return item
+        }
     }
+
+    /// 末尾の `limit` 行。何もなかった見回りは数えず、会話が押し出されないようにする。
+    public func recent(_ limit: Int) -> [ThreadItem] {
+        let items = all().suffix(Self.windowLimit)
+        var counted = 0
+        let start = items.indices.last { i in
+            if !items[i].isQuietScan { counted += 1 }
+            return counted == limit
+        }
+        return Array(start.map { items[$0...] } ?? items[...])
+    }
+
+    /// AI に渡す最近の流れ。何もなかった見回りは、最後の 1 回だけ残す。
+    public func conversation(_ limit: Int = Thread.promptItems) -> [ThreadItem] {
+        let items = recent(limit)
+        let last = items.lastIndex(where: \.isQuietScan)
+        return items.indices.filter { !items[$0].isQuietScan || $0 == last }.map { items[$0] }
+    }
+
+    /// その提案について話した全ての行。
+    public func about(_ id: String) -> [ThreadItem] { all().filter { $0.about == id } }
 }
 
 struct ChatAgent: AgentRun {
@@ -63,7 +95,7 @@ public struct Conversation {
             return Dictionary(uniqueKeysWithValues: all.compactMap { name, text in text.map { (name, $0) } })
         }
     }
-    struct Turn: Decodable { var message: String; var files: Files; var suggestions: [Draft]; var done: Bool }
+    struct Turn: Decodable { var message: String; var files: Files; var suggestions: [Draft]; var revisions: [Revision]?; var about: String?; var done: Bool }
 
     /// 長い記録は、判断に近い終わりの方を残す
     static let logLimit = 100_000
@@ -112,9 +144,12 @@ public struct Conversation {
             parts.append(try String(contentsOf: paths.prompts.appendingPathComponent("BOOTSTRAP.md"), encoding: .utf8))
         }
         parts.append(workspace.context())
+        // 取り下げたものも少しの間は見せ、頼まれたら戻せるようにする
+        let reviewable = try store.load().filter { $0.status.isOpen || ($0.status == .dismissed && Date().timeIntervalSince($0.updatedAt) < 7 * 24 * 3600) }
+        parts.append(Store.reviewSection(reviewable))
         parts.append("## 今の指示ファイル\n" + Self.files.map { "### \($0)\n\(current($0))" }.joined(separator: "\n\n"))
         if let about { parts.append(try topic(about)) }
-        let lines = thread.recent(Thread.promptItems).map { item -> String in
+        let lines = thread.conversation().map { item -> String in
             let run = item.run.map { "（記録 runs/\($0).jsonl）" } ?? ""
             // 提案の題など外部の文面を含むので、改行で別の発言に見えないようにする
             return "\(item.role): \(item.text.replacingOccurrences(of: "\n", with: " "))\(run)"
@@ -140,11 +175,15 @@ public struct Conversation {
     public func say(_ words: String?, about: String? = nil, now: Date = Date()) throws -> State {
         let schema = try Self.schema(paths: paths)
         let turn = try agent.run(prompt: try prompt(words: words, about: about), schema: schema).structured(Turn.self)
+        let added = try store.merge(turn.suggestions.map(Self.fillSources), now: now)
+        // 話題を選ばずに話しても、その提案についての話なら結び付ける
+        let known = try turn.about.flatMap { id in try store.load().contains { $0.id == id } ? id : nil }
+        let topic = about ?? known ?? added.first?.id
         if let words {
-            try thread.append("you", words, about: about, now: now)
+            try thread.append("you", words, about: topic, now: now)
             try workspace.remember("話した あなた: \(words)", now: now)
         }
-        try thread.append("familiar", turn.message, about: about, now: now)
+        try thread.append("familiar", turn.message, about: topic, now: now)
         let changes = turn.files.changes
             .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
             .filter { $0.before != $0.after }
@@ -155,16 +194,16 @@ public struct Conversation {
             // 既定のままでよいと言われたときは、反映するものがない
             try? FileManager.default.removeItem(at: workspace.file("BOOTSTRAP.md"))
         }
-        _ = try store.merge(turn.suggestions.map(Self.fillSources), now: now)
+        try store.revise(turn.revisions ?? [], seenAt: now, restoring: true)
         return try state()
     }
 
-    /// 会話から生まれた提案には出典がないことがある。重複判定には話ごとのキーを使う。
+    /// 会話から生まれた提案には URL がない。根拠の文がなければ題で見分ける。
     static func fillSources(_ draft: Draft) -> Draft {
         var draft = draft
         draft.sources = draft.sources.map { source in
             var source = source
-            if source.url.isEmpty { source.url = "familiar://chat/\(UUID().uuidString)" }
+            if source.url.isEmpty && source.excerpt.isEmpty { source.excerpt = draft.title }
             return source
         }
         return draft
@@ -177,13 +216,21 @@ public struct Conversation {
             throw FamiliarError.failed("suggestions.schema.json を読めません")
         }
         suggestions["maxItems"] = 1
+        guard var revisions = (scan?["properties"] as? [String: Any])?["revisions"] as? [String: Any],
+              var item = revisions["items"] as? [String: Any], var fields = item["properties"] as? [String: Any] else {
+            throw FamiliarError.failed("suggestions.schema.json を読めません")
+        }
+        // 戻すのは人に頼まれたときだけなので、会話にだけ許す
+        fields["action"] = ["enum": ["retire", "update", "restore"]]
+        item["properties"] = fields
+        revisions["items"] = item
         let text = ["type": "string"]
         let nullable = ["type": ["string", "null"]]
         let keys = ["soul", "user", "heartbeat", "output", "memory"]
         let files: [String: Any] = ["type": "object", "additionalProperties": false, "required": keys,
                                     "properties": Dictionary(uniqueKeysWithValues: keys.map { ($0, nullable) })]
-        let schema: [String: Any] = ["type": "object", "additionalProperties": false, "required": ["message", "files", "suggestions", "done"],
-                                     "properties": ["message": text, "files": files, "suggestions": suggestions, "done": ["type": "boolean"]]]
+        let schema: [String: Any] = ["type": "object", "additionalProperties": false, "required": ["message", "files", "suggestions", "revisions", "about", "done"],
+                                     "properties": ["message": text, "files": files, "suggestions": suggestions, "revisions": revisions, "about": nullable, "done": ["type": "boolean"]]]
         return String(decoding: try JSONSerialization.data(withJSONObject: schema), as: UTF8.self)
     }
 

@@ -51,14 +51,51 @@ extension Draft {
 }
 
 public struct ScanOutput: Codable, Equatable {
+    public struct Event: Codable, Equatable {
+        public var start: String
+        public var end: String
+    }
+
     public var coverage: [Coverage]
-    public var upcoming_events: [String]
+    public var upcoming_events: [Event]
     public var suggestions: [Draft]
+    public var revisions: [Revision]?
 
     /// 読めない時刻は捨てる。予定の取得に失敗しても見回り自体は成立させる。
-    public var upcomingDates: [Date] {
+    public var upcomingDates: [Date] { Self.dates(upcoming_events.map(\.start)) }
+    public var endDates: [Date] { Self.dates(upcoming_events.map(\.end)) }
+
+    private static func dates(_ texts: [String]) -> [Date] {
         let f = ISO8601DateFormatter()
-        return upcoming_events.compactMap { f.date(from: $0) }.sorted()
+        return texts.compactMap { f.date(from: $0) }.sorted()
+    }
+}
+
+/// 出力先へ渡すタスクの定義。受け取った人が familiar を見ずに進められる内容にする。
+public struct Brief: Codable, Equatable {
+    public struct Reference: Codable, Equatable { public var title, url: String }
+    public var title, background, goal: String
+    public var criteria: [String]
+    public var notes: String
+    public var references: [Reference]
+
+    /// 足りない項目の名前。空なら渡せる。
+    var missing: [String] {
+        func blank(_ text: String) -> Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        var names: [String] = []
+        if blank(title) { names.append("タイトル") }
+        if blank(background) { names.append("背景") }
+        if blank(goal) { names.append("やること") }
+        if criteria.isEmpty || criteria.contains(where: blank) { names.append("達成条件") }
+        if references.contains(where: { !$0.url.hasPrefix("https://") && !$0.url.hasPrefix("http://") }) { names.append("開ける参考リンク") }
+        return names
+    }
+
+    public var body: String {
+        var parts = ["## 背景\n\(background)", "## やること\n\(goal)", "## 達成条件\n" + criteria.map { "- [ ] \($0)" }.joined(separator: "\n")]
+        if !notes.isEmpty { parts.append("## 補足\n\(notes)") }
+        if !references.isEmpty { parts.append("## 参考\n" + references.map { "- [\($0.title)](\($0.url))" }.joined(separator: "\n")) }
+        return parts.joined(separator: "\n\n")
     }
 }
 
@@ -76,13 +113,15 @@ public struct Suggestion: Codable, Equatable {
     public var question: String?
     /// エージェントが承認を待っている計画。
     public var plan: String?
+    /// 計画で固めたタスクの定義。承認されると、この内容が出力先へ渡る。
+    public var brief: Brief?
     /// 人が計画を承認した。質問への返事のあとも、計画に戻らず続ける。
     public var approved: Bool?
     /// 指示と質問のやり取り。採用をやり直すときに渡す。
     public var dialog: [String]?
 
     private enum CodingKeys: String, CodingKey {
-        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, plan, approved, dialog
+        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, plan, brief, approved, dialog
         case resultUrl = "linearUrl" // 保存済みの提案と同じキーのまま読む
     }
 
