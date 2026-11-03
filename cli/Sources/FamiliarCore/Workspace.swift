@@ -133,11 +133,15 @@ struct DreamAgent: AgentRun {
 public struct Dreamer {
     static let minimumEntries = 3
     static let schema = #"""
-    {"type":"object","additionalProperties":false,"required":["user","memory","summary"],
-     "properties":{"user":{"type":"string"},"memory":{"type":"string"},"summary":{"type":"string"}}}
+    {"type":"object","additionalProperties":false,"required":["user","memory","summary","instructions"],
+     "properties":{"user":{"type":"string"},"memory":{"type":"string"},"summary":{"type":"string"},
+      "instructions":{"type":"object","additionalProperties":false,"required":["heartbeat","output","reason"],
+       "properties":{"heartbeat":{"type":["string","null"]},"output":{"type":["string","null"]},"reason":{"type":["string","null"]}}}}}
     """#
 
-    struct Output: Decodable { var user: String; var memory: String; var summary: String }
+    /// 繰り返された訂正を、毎回の実行が読む指示へ上げる案。記憶と違い、人が反映する。
+    struct Instructions: Decodable { var heartbeat: String?; var output: String?; var reason: String? }
+    struct Output: Decodable { var user: String; var memory: String; var summary: String; var instructions: Instructions? }
 
     let paths: Paths
     let workspace: Workspace
@@ -166,6 +170,7 @@ public struct Dreamer {
         guard !entries.isEmpty else { return nil }
         let user = try workspace.read("USER.md")
         let memory = (try? String(contentsOf: workspace.file("MEMORY.md"), encoding: .utf8)) ?? ""
+        let heartbeat = (try? workspace.read("HEARTBEAT.md")) ?? "", output = (try? workspace.read("OUTPUT.md")) ?? ""
         let rules = try String(contentsOf: paths.prompts.appendingPathComponent("dream.md"), encoding: .utf8)
         let prompt = """
         \(rules)
@@ -176,23 +181,33 @@ public struct Dreamer {
         ## 今の MEMORY.md
         \(memory.isEmpty ? "なし" : memory)
 
+        ## 今の HEARTBEAT.md
+        \(heartbeat)
+
+        ## 今の OUTPUT.md
+        \(output)
+
         ## 最近の判断
         \(entries.joined(separator: "\n"))
         """
-        let output = try agent.run(prompt: prompt, schema: Self.schema).structured(Output.self)
-        guard output.user.count <= Workspace.userLimit, output.memory.count <= Workspace.memoryLimit else {
+        let result = try agent.run(prompt: prompt, schema: Self.schema).structured(Output.self)
+        guard result.user.count <= Workspace.userLimit, result.memory.count <= Workspace.memoryLimit else {
             throw FamiliarError.failed("整理の結果が上限を超えたので、記憶は変更しませんでした")
         }
         // 書き換える前の版を 1 つ残し、人が戻せるようにする
         for (name, text) in [("USER.md", user), ("MEMORY.md", memory)] {
             try text.write(to: workspace.file("memory/previous-\(name)"), atomically: true, encoding: .utf8)
         }
-        try output.user.write(to: workspace.file("USER.md"), atomically: true, encoding: .utf8)
-        try output.memory.write(to: workspace.file("MEMORY.md"), atomically: true, encoding: .utf8)
+        try result.user.write(to: workspace.file("USER.md"), atomically: true, encoding: .utf8)
+        try result.memory.write(to: workspace.file("MEMORY.md"), atomically: true, encoding: .utf8)
         let dreams = (try? String(contentsOf: workspace.file("DREAMS.md"), encoding: .utf8)) ?? ""
-        try (dreams + "## \(ISO8601DateFormatter().string(from: now))\n\(output.summary)\n\n")
+        try (dreams + "## \(ISO8601DateFormatter().string(from: now))\n\(result.summary)\n\n")
             .write(to: workspace.file("DREAMS.md"), atomically: true, encoding: .utf8)
         try Store.encoder.encode(now).write(to: stamp, options: .atomic)
-        return output.summary
+        if let i = result.instructions, let reason = i.reason, !reason.isEmpty {
+            let files = [("HEARTBEAT.md", i.heartbeat), ("OUTPUT.md", i.output)].compactMap { name, text in text.map { (name, $0) } }
+            try Conversation(paths: paths).propose(Dictionary(uniqueKeysWithValues: files), reason: reason, now: now)
+        }
+        return result.summary
     }
 }

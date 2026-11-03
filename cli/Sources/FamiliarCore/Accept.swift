@@ -35,9 +35,9 @@ public struct Acceptor {
     static let schema = #"""
     {"type":"object","additionalProperties":false,"required":["status","message","url","brief"],
      "properties":{"status":{"enum":["done","needs_input","plan"]},"message":{"type":"string"},"url":{"type":["string","null"]},
-      "brief":{"type":["object","null"],"additionalProperties":false,"required":["title","background","goal","criteria","notes","references"],
+      "brief":{"type":["object","null"],"additionalProperties":false,"required":["title","background","goal","criteria","verify","notes","references"],
        "properties":{"title":{"type":"string"},"background":{"type":"string"},"goal":{"type":"string"},
-        "criteria":{"type":"array","minItems":1,"items":{"type":"string"}},"notes":{"type":"string"},
+        "criteria":{"type":"array","minItems":1,"items":{"type":"string"}},"verify":{"type":"string"},"notes":{"type":"string"},
         "references":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","url"],
          "properties":{"title":{"type":"string"},"url":{"type":"string","pattern":"^https?://"}}}}}}}}
     """#
@@ -65,6 +65,7 @@ public struct Acceptor {
         - background: なぜ必要か、経緯、関係者、確認した事実。情報源を読み直して確かめ、必要な内容は本文へ書き写す。確かめていないことは事実として書かない
         - goal: やること
         - criteria: 終わったと第三者が判定できる条件。1 項目に 1 つ
+        - verify: 達成条件を第三者が確かめる方法。動かすコマンド、開く画面、残すリンクなど、完了の報告に付ける証拠が決まるように書く
         - notes: 作業に関わる前提、制約、やらないこと。なければ空文字
         - references: 受け取る人が開ける http(s) の URL だけ。なければ空配列
         「会話のとおり」「見回りで見つけた」のように、familiar の中を見ないと分からない書き方はしません。提案がどこから来たかも書きません。

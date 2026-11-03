@@ -234,6 +234,21 @@ public struct Conversation {
         return String(decoding: try JSONSerialization.data(withJSONObject: schema), as: UTF8.self)
     }
 
+    /// 会話の外（記憶の整理）が作った変更案を、会話と同じ形で出す。人が差分を見て反映する。
+    /// 会話で作った案が残っているときは、それを上書きしない。
+    @discardableResult
+    public func propose(_ files: [String: String], reason: String, now: Date = Date()) throws -> Bool {
+        guard proposal().isEmpty else { return false }
+        let changes = files.filter { Self.files.contains($0.key) }
+            .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
+            .filter { $0.before != $0.after }
+            .sorted { $0.file < $1.file }
+        guard !changes.isEmpty else { return false }
+        try JSONEncoder().encode(changes).write(to: proposalFile, options: .atomic)
+        try thread.append("familiar", "\(changes.map(\.file).joined(separator: "、")) の変更案を作りました。\(reason)", now: now)
+        return true
+    }
+
     /// 案を作ったあとに整理や手で変わっていたら、上書きせず止める。
     public func apply() throws -> State {
         let changes = proposal()

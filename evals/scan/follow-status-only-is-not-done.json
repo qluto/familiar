@@ -1,0 +1,32 @@
+{
+  "name": "follow-status-only-is-not-done",
+  "data": "### linear\n- https://issues.example.com/ACME-42  状態: Done  2026-11-03 09:30  コメントなし。関連する PR なし",
+  "known": [
+    {
+      "id": "dd0004",
+      "title": "請求書の宛名を変えられるようにする",
+      "status": "accepted",
+      "sources": [
+        "https://mail.example.com/thread/d4"
+      ],
+      "result": "https://issues.example.com/ACME-42",
+      "criteria": [
+        "請求書の宛名を画面で変えられる",
+        "変えた宛名が PDF に反映される"
+      ],
+      "verify": "マージした PR と、PDF の出力例を確かめる",
+      "progress": "working",
+      "days": 1
+    }
+  ],
+  "expect": {
+    "suggest": [],
+    "follow": {
+      "dd0004": [
+        "working",
+        "waiting"
+      ]
+    }
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

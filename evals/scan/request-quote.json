@@ -1,0 +1,12 @@
+{
+  "name": "request-quote",
+  "data": "### gmail\n- https://mail.example.com/thread/q1  2026-11-03 08:12  From: 森 葵 <aoi@kitefield.example>  To: あなた\n  件名: 改定見積のお願い\n  本文: 先日の打ち合わせを受けて、作業範囲を 2 画面減らした場合の見積を金曜（11/6）までにいただけますか。社内の稟議に間に合わせたいです。",
+  "expect": {
+    "suggest": [
+      [
+        "見積"
+      ]
+    ]
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

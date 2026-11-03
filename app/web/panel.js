@@ -92,10 +92,15 @@ function talkLine(item, s) {
   if (item.role === "you") return el("div", { className: "line you", textContent: item.text });
   return el("div", { className: "line" }, rich(item.text));
 }
+// 渡したあとの様子。見回りが出力先から確かめたものだけを見せる
+const progressLabels = { working: "進行中", waiting: "返事待ち", stalled: "停滞", done: "完了" };
+function delegated(s) {
+  return s.progress ? progressLabels[s.progress.state] ?? "依頼済み" : "依頼済み";
+}
 function topicRow(s, group) {
   const pairs = group.filter((i) => i.role === "you").length;
   if (!isOpen(s)) {
-    const label = `「${s.draft.title}」 ${pairs} 往復 → ${s.status === "accepted" ? "完了" : "見送り"}`;
+    const label = `「${s.draft.title}」 ${pairs} 往復 → ${s.status === "accepted" ? delegated(s) : "見送り"}`;
     return fold(`topic:${group[0].at}`, "scan", label, (box) => box.append(...group.map((i) => talkLine(i))));
   }
   return el("div", { className: "topic" }, el("h3", { textContent: `「${s.draft.title}」について` }), ...group.map((i) => talkLine(i, s)));

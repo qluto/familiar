@@ -66,7 +66,7 @@ public struct Store {
     /// 重複を除いて追加し、追加した提案を返す。却下・採用済みと重なるものも再度は出さない。
     public func merge(_ drafts: [Draft], now: Date = Date()) throws -> [Suggestion] {
         try update(now: now) { items in
-            var known = Set(items.flatMap(\.dedupeKeys))
+            var known = Self.taken(items)
             var added: [Suggestion] = []
             for draft in drafts {
                 let s = Suggestion(draft: draft, now: now)
@@ -79,9 +79,14 @@ public struct Store {
         }
     }
 
+    /// 出した提案の出典と、渡した先の URL。渡した仕事の issue や PR を、別の提案として出し直さないため。
+    static func taken(_ items: [Suggestion]) -> Set<String> {
+        Set(items.flatMap(\.dedupeKeys) + items.compactMap { $0.resultUrl.map(Dedupe.normalize) })
+    }
+
     /// すでに出した提案と出典が重ならない候補だけを返す。
     public func unseen(_ drafts: [Draft], now: Date = Date()) throws -> [Draft] {
-        let known = Set(try load(now: now).flatMap(\.dedupeKeys))
+        let known = Self.taken(try load(now: now))
         return drafts.filter { known.isDisjoint(with: Dedupe.keys(for: $0.sources)) }
     }
 

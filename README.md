@@ -18,7 +18,9 @@ Claude Code のコネクタ（既定は Slack / Gmail / Google Calendar / Notion
 | `memory/YYYY-MM-DD.md` | 採用・却下・後回しと、話した言葉 | familiar |
 | `DREAMS.md` | 記憶を整理した内容の記録 | familiar |
 
-判断が 3 件以上たまると、1 日 1 回 `USER.md` と `MEMORY.md` へ整理します。書き換える前の版は `memory/previous-*.md` に残ります。
+判断が 3 件以上たまると、1 日 1 回 `USER.md` と `MEMORY.md` へ整理します。書き換える前の版は `memory/previous-*.md` に残ります。同じ訂正が繰り返されていれば、`HEARTBEAT.md` か `OUTPUT.md` の変更案も会話に出します（反映するかはあなたが決めます）。
+
+採用した提案は、出力先へ渡したあとも見回りで追います。出力先と出典を読み直し、進んだ、返事待ち、止まっている、終わったといった様子が変わったときだけ会話で知らせます。「終わった」は、タスクの定義にある達成条件を証拠で確かめられたときだけです。
 
 - **権限はあなたの設定に従います:** 見回りと会話は、Claude Code の設定と許可済みの MCP の範囲で動きます。外部へ書き込まないことは指示で守らせており、強制ではありません。守りたい方針は `OUTPUT.md` に書きます
 - **キャラクターは差し替え可能:** 同梱のデフォルトのほか、[キャラクターパック](docs/character-pack.md)を[自分で作れます](app/packs/README.md)
@@ -53,6 +55,7 @@ Claude Code のコネクタ（既定は Slack / Gmail / Google Calendar / Notion
 swift test --package-path cli   # CLI のテスト
 node app/qa_graph.mjs           # 状態遷移の検査
 node app/qa_markdown.mjs        # 会話の Markdown 表示の検査
+familiar eval                   # 見回りの判断を架空の情報源で確かめる（claude を使う。evals/scan/README.md）
 app/install.sh                  # ビルドして /Applications へ入れる
 ```
 

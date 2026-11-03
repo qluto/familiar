@@ -1,0 +1,31 @@
+{
+  "name": "follow-done-with-evidence",
+  "data": "### linear\n- https://issues.example.com/ACME-41  状態: Done  2026-11-03 09:10\n  コメント 2026-11-03 09:05 担当 中村 蒼: 達成条件の確認です。CSV 書き出しは https://git.example.com/acme/app/pull/88 でマージ済み。1 万行の書き出しが 3 秒で終わることを CI の結果 https://ci.example.com/run/5512 で確認しました。\n### github\n- https://git.example.com/acme/app/pull/88  2026-11-03 08:50  Merged「CSV 書き出しを追加」\n### ci\n- https://ci.example.com/run/5512  2026-11-03 08:40  成功。export_10k_rows: 3.1 秒（上限 5 秒）\n### slack\n- https://chat.example.com/archives/C2/p200  2026-10-31 依頼のスレッド。それ以降の書き込みなし",
+  "known": [
+    {
+      "id": "cc0003",
+      "title": "一覧を CSV で書き出せるようにする",
+      "status": "accepted",
+      "sources": [
+        "https://chat.example.com/archives/C2/p200"
+      ],
+      "result": "https://issues.example.com/ACME-41",
+      "criteria": [
+        "一覧を CSV で書き出せる",
+        "1 万行を 5 秒以内に書き出せる"
+      ],
+      "verify": "マージした PR と、1 万行で測った CI の結果を確かめる",
+      "progress": "working",
+      "days": 2
+    }
+  ],
+  "expect": {
+    "suggest": [],
+    "follow": {
+      "cc0003": [
+        "done"
+      ]
+    }
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

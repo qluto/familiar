@@ -18,6 +18,8 @@ usage: familiar <command>
   dream [--force]                          最近の判断を長期記憶へ整理する
   runs [--limit 件数] [--json]               実行の記録の一覧
   log <id> [--json]                        実行の記録を読みやすくして表示する
+  eval [--model MODEL] [--only 名前] [--dir 場所]
+                                           見回りの判断を架空の情報源で確かめる（既定: haiku、evals/scan）
   dismiss <id> [理由]
   snooze <id> [時間数]                      既定: 24
 """
@@ -160,6 +162,31 @@ func run() throws {
     case "dream":
         let args = try Args(rest, valued: [])
         print(try Dreamer(paths: paths).dream(force: args.flags.contains("--force")) ?? "整理することはありません")
+    case "eval":
+        let args = try Args(rest, valued: ["--model", "--only", "--dir"])
+        let dir = args.options["--dir"].map { URL(fileURLWithPath: $0) }
+            ?? paths.prompts.deletingLastPathComponent().appendingPathComponent("evals/scan")
+        let cases = try EvalCase.load(dir).filter { c in args.options["--only"].map { c.name.contains($0) } ?? true }
+        let evaluator = Evaluator(prompts: paths.prompts, model: args.options["--model"] ?? "haiku")
+        let cwd = FileManager.default.temporaryDirectory.appendingPathComponent("familiar-eval-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        var results = [Evaluator.Result?](repeating: nil, count: cases.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: cases.count) { i in
+            let r: Evaluator.Result
+            do { r = try evaluator.run(cases[i], cwd: cwd) }
+            catch { r = Evaluator.Result(name: cases[i].name, problems: ["実行に失敗しました: \(error)"], cost: 0) }
+            lock.lock(); results[i] = r; lock.unlock()
+        }
+        var cost = 0.0
+        for r in results.compactMap({ $0 }) {
+            cost += r.cost
+            print("\(r.problems.isEmpty ? "ok  " : "NG  ") \(r.name)")
+            r.problems.forEach { print("      \($0)") }
+        }
+        let passed = results.filter { $0?.problems.isEmpty == true }.count
+        print("\(passed)/\(cases.count) 合格  usd=\(String(format: "%.3f", cost))  記録: \(cwd.path)/runs")
+        if passed < cases.count { exit(1) }
     case "dismiss":
         let args = try Args(rest, valued: [])
         let reason = args.positional.dropFirst().joined(separator: " ")

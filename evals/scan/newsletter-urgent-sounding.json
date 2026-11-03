@@ -1,0 +1,8 @@
+{
+  "name": "newsletter-urgent-sounding",
+  "data": "### gmail\n- https://mail.example.com/thread/n1  2026-11-03 07:00  From: Cloudly Deals <news@cloudly.example>  Labels: CATEGORY_PROMOTIONS\n  件名: 【本日まで】年額プランが 50% オフ！今すぐ更新を\n  本文: 期間限定のご案内です。今すぐアップグレードしないと特典を失います。",
+  "expect": {
+    "suggest": []
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

@@ -503,7 +503,7 @@ func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Pat
 // MARK: - 計画
 
 func planned(_ message: String, brief: [String: Any]? = nil) -> [String: Any] {
-    let full: [String: Any] = ["title": "題", "background": "経緯", "goal": "やること", "criteria": ["確認できる"], "notes": "",
+    let full: [String: Any] = ["title": "題", "background": "経緯", "goal": "やること", "criteria": ["確認できる"], "verify": "画面で開いて確かめる", "notes": "",
                                "references": [["title": "元のスレッド", "url": "https://x.test/1"]]]
     return ["status": "plan", "message": message, "url": NSNull(), "brief": brief ?? full]
 }
@@ -615,10 +615,11 @@ final class PromptAgent: AgentRun {
 
 @Test func anIncompleteBriefCannotBeApproved() throws {
     let incomplete: [[String: Any]] = [
-        ["title": "題", "background": " ", "goal": "g", "criteria": ["c"], "notes": "", "references": [] as [Any]],
-        ["title": "題", "background": "b", "goal": "g", "criteria": [] as [Any], "notes": "", "references": [] as [Any]],
-        ["title": "題", "background": "b", "goal": "g", "criteria": ["c"], "notes": "",
+        ["title": "題", "background": " ", "goal": "g", "criteria": ["c"], "verify": "v", "notes": "", "references": [] as [Any]],
+        ["title": "題", "background": "b", "goal": "g", "criteria": [] as [Any], "verify": "v", "notes": "", "references": [] as [Any]],
+        ["title": "題", "background": "b", "goal": "g", "criteria": ["c"], "verify": "v", "notes": "",
          "references": [["title": "記録", "url": "familiar://chat/1"]]],
+        ["title": "題", "background": "b", "goal": "g", "criteria": ["c"], "verify": " ", "notes": "", "references": [] as [Any]],
     ]
     for brief in incomplete {
         let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
@@ -661,8 +662,23 @@ final class PromptAgent: AgentRun {
 }
 
 @Test func aBriefReadsOnItsOwn() {
-    let brief = Brief(title: "t", background: "b", goal: "g", criteria: ["a", "c"], notes: "", references: [])
-    #expect(brief.body == "## 背景\nb\n\n## やること\ng\n\n## 達成条件\n- [ ] a\n- [ ] c")
+    let brief = Brief(title: "t", background: "b", goal: "g", criteria: ["a", "c"], verify: "v", notes: "", references: [])
+    #expect(brief.body == "## 背景\nb\n\n## やること\ng\n\n## 達成条件\n- [ ] a\n- [ ] c\n\n## 確かめ方\nv\n\n\(Brief.report)")
+}
+
+@Test func theBriefAlwaysAsksForEvidence() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    _ = try Acceptor(paths: store.paths, agent: FakeAgent(output: planned("作ります"))).accept(id: id, note: nil)
+    let runner = PromptAgent(output: ["status": "done", "message": "作った", "url": NSNull(), "brief": NSNull()])
+    _ = try Acceptor(paths: store.paths, agent: runner).accept(id: id, note: nil, approve: true)
+    let prompt = try #require(runner.prompts.first)
+    #expect(prompt.contains("## 確かめ方\n画面で開いて確かめる") && prompt.contains(Brief.report))
+}
+
+@Test func briefsApprovedBeforeVerifyStillRead() throws {
+    let old = #"{"title":"t","background":"b","goal":"g","criteria":["a"],"notes":"","references":[]}"#
+    let brief = try JSONDecoder().decode(Brief.self, from: Data(old.utf8))
+    #expect(brief.verify.isEmpty && !brief.body.contains("確かめ方"))
 }
 
 // MARK: - 提案の見直し
@@ -782,4 +798,159 @@ func revision(_ action: String, _ id: String, title: String? = nil) -> Revision 
     let state = try chat.say("準備しないと")
     let id = try Store(paths: paths).load()[0].id
     #expect(state.items.suffix(2).allSatisfy { $0.about == id })
+}
+
+// MARK: - 預けたものの追跡
+
+func delegatedFixture() throws -> (Store, String) {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    try store.transition(id) { s in
+        s.status = .accepted
+        s.resultUrl = "https://linear.test/ISS-1"
+        s.brief = Brief(title: "t", background: "b", goal: "g", criteria: ["PR がマージされる"], verify: "PR を開く", notes: "", references: [])
+    }
+    return (store, id)
+}
+
+func up(_ id: String, _ state: String, _ evidence: [String] = [], note: String = "確かめた") -> FollowUp {
+    FollowUp(id: id, state: state, note: note, evidence: evidence)
+}
+
+@Test func theScanSeesWhatWasHandedOff() throws {
+    let (store, id) = try delegatedFixture()
+    let text = Scanner.prompt(base: "", cursor: [:], known: try store.load(), now: Date())
+    #expect(text.contains("## 預けたもの") && text.contains("\"id\":\"\(id)\"") && text.contains("https://linear.test/ISS-1"))
+    #expect(text.contains("PR がマージされる") && text.contains("PR を開く"))
+}
+
+@Test func onlyChangesInProgressReachTheConversation() throws {
+    let (store, id) = try delegatedFixture()
+    #expect(try store.follow([up(id, "working", ["https://gh.test/pr/1"])]).count == 1)
+    // 言い換えただけの同じ様子は流さない
+    #expect(try store.follow([up(id, "working", ["https://gh.test/pr/1"], note: "言い換え")]).isEmpty)
+    // 新しい証拠は流す
+    #expect(try store.follow([up(id, "working", ["https://gh.test/pr/1#review"])]).count == 1)
+    let s = try #require(try store.load().first)
+    #expect(s.progress?.evidence.count == 2)
+    #expect(Thread(paths: store.paths).about(id).count == 2)
+    #expect(Thread(paths: store.paths).about(id).last?.text.contains("進んでいます") == true)
+}
+
+@Test func doneNeedsEvidenceAndEndsTheFollowing() throws {
+    let (store, id) = try delegatedFixture()
+    #expect(try store.follow([up(id, "done")]).isEmpty)
+    #expect(try store.load().first?.progress == nil)
+    #expect(try store.follow([up(id, "done", ["https://gh.test/pr/1"])]).count == 1)
+    let s = try #require(try store.load().first)
+    #expect(!s.isFollowed(now: Date()))
+    #expect(!Scanner.prompt(base: "", cursor: [:], known: [s], now: Date()).contains("## 預けたもの"))
+    #expect(try store.follow([up(id, "stalled")]).isEmpty)
+}
+
+@Test func onlyAcceptedWorkIsFollowed() throws {
+    let (_, store, id) = try acceptFixture(FakeAgent(output: nil))
+    #expect(try store.follow([up(id, "working", ["https://x.test"])]).isEmpty)
+    #expect(try store.follow([up("nope", "working")]).isEmpty)
+}
+
+@Test func followingStopsAMonthAfterTheLastMovement() throws {
+    let (store, id) = try delegatedFixture()
+    let later = Date().addingTimeInterval(31 * 24 * 3600)
+    #expect(try store.follow([up(id, "stalled")], now: later).isEmpty)
+}
+
+@Test func theRefinerChecksFollowUps() throws {
+    let (store, id) = try delegatedFixture()
+    let known = try store.load()
+    let text = try Scanner.refinePrompt(base: "", candidates: [], followUps: [up(id, "done", ["https://gh.test/pr/1"])],
+                                        followed: known.filter { $0.isFollowed(now: Date()) })
+    #expect(text.contains("## 追跡の候補") && text.contains("https://gh.test/pr/1") && text.contains("## 預けたもの"))
+}
+
+@Test func theScanSchemaAsksForFollowUps() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../prompts/suggestions.schema.json")
+    let schema = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+    #expect((schema?["required"] as? [String])?.contains("follow_ups") == true)
+}
+
+@Test func handedOffWorkIsNotSuggestedAgain() throws {
+    let (store, _) = try delegatedFixture()
+    let issue = draft("ISS-1 に担当を決める", url: "https://linear.test/ISS-1/")
+    #expect(try store.unseen([issue]).isEmpty)
+    #expect(try store.merge([issue]).isEmpty)
+}
+
+// MARK: - eval
+
+func evalCase(_ expect: String, known: String = "[]") throws -> EvalCase {
+    let json = #"{"name":"c","now":"2026-11-03T10:00:00+09:00","data":"d","known":\#(known),"expect":\#(expect)}"#
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try decoder.decode(EvalCase.self, from: Data(json.utf8))
+}
+
+func output(_ drafts: [Draft] = [], revisions: [Revision] = [], follow: [FollowUp] = []) -> ScanOutput {
+    ScanOutput(coverage: [], upcoming_events: [], suggestions: drafts, revisions: revisions, follow_ups: follow)
+}
+
+@Test func evalCountsMissingAndExtraSuggestions() throws {
+    let c = try evalCase(#"{"suggest":[["見積"]],"allow":["不審"]}"#)
+    #expect(c.check(output([draft("改定見積を送る")])).isEmpty)
+    #expect(c.check(output([])) == ["出るべき提案がない: 見積"])
+    #expect(c.check(output([draft("改定見積を送る"), draft("広告を読む")])) == ["余計な提案: 広告を読む"])
+    #expect(c.check(output([draft("改定見積を送る"), draft("不審なメールを確認する")])).isEmpty)
+}
+
+@Test func evalChecksRevisionsAndFollowUps() throws {
+    let c = try evalCase(#"{"suggest":[],"revise":[["a1","retire"]],"follow":{"b2":["done"],"c3":[null,"working"]}}"#)
+    let good = output(revisions: [revision("retire", "a1")], follow: [up("b2", "done", ["https://x.test"])])
+    #expect(c.check(good).isEmpty)
+    let bad = output(revisions: [revision("update", "a1")], follow: [up("b2", "done"), up("z9", "working")])
+    #expect(c.check(bad) == ["出るべき見直しがない: a1:retire", "余計な見直し: a1:update", "追跡 b2 の done に証拠がない", "余計な追跡: z9"])
+}
+
+@Test func evalCasesBuildTheSuggestionsTheyDescribe() throws {
+    let c = try evalCase(#"{"suggest":[]}"#, known: #"[{"id":"d4","title":"t","status":"accepted","sources":["https://s.test"],"result":"https://r.test","criteria":["c"],"verify":"v","progress":"working","days":2}]"#)
+    let s = try #require(c.suggestions().first)
+    #expect(s.id == "d4" && s.isFollowed(now: c.now) && s.brief?.verify == "v" && s.progress?.state == "working")
+    #expect(Scanner.prompt(base: "", cursor: [:], known: [s], now: c.now).contains("https://r.test"))
+}
+
+@Test func theBundledEvalCasesLoad() throws {
+    let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../evals/scan")
+    #expect(try EvalCase.load(dir).count >= 10)
+}
+
+// MARK: - 訂正を指示へ上げる
+
+func dreamWithInstructions(_ instructions: [String: Any]) throws -> (Paths, Workspace) {
+    let paths = try workspacePaths()
+    let workspace = Workspace(paths: paths)
+    try "".write(to: paths.prompts.appendingPathComponent("dream.md"), atomically: true, encoding: .utf8)
+    try "U".write(to: paths.prompts.appendingPathComponent("USER.md"), atomically: true, encoding: .utf8)
+    try workspace.record("却下", Suggestion(draft: draft(), now: Date()), detail: "自動のお知らせは要らない")
+    let output: [String: Any] = ["user": "U", "memory": "M", "summary": "覚えた", "instructions": instructions]
+    _ = try Dreamer(paths: paths, agent: DreamFake(output: output)).dream(force: true)
+    return (paths, workspace)
+}
+
+@Test func repeatedCorrectionsBecomeAProposalNotAWrite() throws {
+    let (paths, workspace) = try dreamWithInstructions(["heartbeat": "新しい見回り", "output": NSNull(), "reason": "同じ却下が 2 回あった"])
+    let state = try Conversation(paths: paths).state()
+    #expect(state.proposal.map(\.file) == ["HEARTBEAT.md"] && state.proposal[0].after == "新しい見回り")
+    #expect((try? workspace.read("HEARTBEAT.md")) != "新しい見回り")
+    #expect(state.items.last?.text.contains("同じ却下が 2 回あった") == true)
+}
+
+@Test func noReasonMeansNoProposal() throws {
+    let (paths, _) = try dreamWithInstructions(["heartbeat": NSNull(), "output": NSNull(), "reason": NSNull()])
+    #expect(try Conversation(paths: paths).state().proposal.isEmpty)
+}
+
+@Test func aProposalFromTheConversationIsNotOverwritten() throws {
+    let paths = try workspacePaths()
+    let conversation = Conversation(paths: paths)
+    #expect(try conversation.propose(["OUTPUT.md": "会話の案"], reason: "r1"))
+    #expect(try !conversation.propose(["HEARTBEAT.md": "整理の案"], reason: "r2"))
+    #expect(try conversation.state().proposal.map(\.after) == ["会話の案"])
 }

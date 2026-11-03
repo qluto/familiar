@@ -1,0 +1,31 @@
+{
+  "name": "follow-no-news",
+  "data": "### linear\n- https://issues.example.com/ACME-44  状態: In Progress  担当 中村 蒼  最後の更新 2026-11-02 17:00（前回の見回りで確認済み）",
+  "known": [
+    {
+      "id": "ff0006",
+      "title": "検索結果の並び順を直す",
+      "status": "accepted",
+      "sources": [
+        "https://chat.example.com/archives/C4/p400"
+      ],
+      "result": "https://issues.example.com/ACME-44",
+      "criteria": [
+        "新しい順に並ぶ"
+      ],
+      "verify": "PR を確かめる",
+      "progress": "working",
+      "days": 0.5
+    }
+  ],
+  "expect": {
+    "suggest": [],
+    "follow": {
+      "ff0006": [
+        null,
+        "working"
+      ]
+    }
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "meeting-prep",
+  "data": "### google_calendar\n- https://calendar.example.com/event/m1  2026-11-04 14:00-15:00  「導入検討の初回打ち合わせ」 参加者: あなた, 小林 晴 <haru@northpine.example>\n  説明: 先方から「現在の運用フローと料金体系を 10 分で説明してほしい」と依頼あり。資料は前日までに共有。",
+  "expect": {
+    "suggest": [
+      [
+        "資料",
+        "準備",
+        "説明"
+      ]
+    ]
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

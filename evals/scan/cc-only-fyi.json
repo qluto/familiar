@@ -1,0 +1,8 @@
+{
+  "name": "cc-only-fyi",
+  "data": "### gmail\n- https://mail.example.com/thread/f1  2026-11-03 09:00  From: 佐藤 凛 <rin@harbor.example>  To: team@harbor.example  Cc: あなた\n  件名: 来週の社内勉強会の資料を共有します\n  本文: 参考までに共有します。返信は不要です。",
+  "expect": {
+    "suggest": []
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

@@ -60,6 +60,7 @@ public struct ScanOutput: Codable, Equatable {
     public var upcoming_events: [Event]
     public var suggestions: [Draft]
     public var revisions: [Revision]?
+    public var follow_ups: [FollowUp]?
 
     /// 読めない時刻は捨てる。予定の取得に失敗しても見回り自体は成立させる。
     public var upcomingDates: [Date] { Self.dates(upcoming_events.map(\.start)) }
@@ -76,8 +77,27 @@ public struct Brief: Codable, Equatable {
     public struct Reference: Codable, Equatable { public var title, url: String }
     public var title, background, goal: String
     public var criteria: [String]
+    /// 達成条件を第三者が確かめる方法。完了の報告に付けてもらう証拠もここで決まる
+    public var verify: String
     public var notes: String
     public var references: [Reference]
+
+    /// 完了の報告の形。受け取る側に任せず、本文へ必ず付ける
+    static let report = "終わったら、達成条件ごとに確かめた結果と、その証拠（PR、テストの結果、送ったメールなどのリンク）を、このタスクのコメントに残してください。"
+
+    public init(title: String, background: String, goal: String, criteria: [String], verify: String, notes: String, references: [Reference]) {
+        self.title = title; self.background = background; self.goal = goal
+        self.criteria = criteria; self.verify = verify; self.notes = notes; self.references = references
+    }
+
+    /// 確かめ方を持つ前に承認された定義も読む
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(title: try c.decode(String.self, forKey: .title), background: try c.decode(String.self, forKey: .background),
+                  goal: try c.decode(String.self, forKey: .goal), criteria: try c.decode([String].self, forKey: .criteria),
+                  verify: try c.decodeIfPresent(String.self, forKey: .verify) ?? "", notes: try c.decode(String.self, forKey: .notes),
+                  references: try c.decode([Reference].self, forKey: .references))
+    }
 
     /// 足りない項目の名前。空なら渡せる。
     var missing: [String] {
@@ -87,12 +107,14 @@ public struct Brief: Codable, Equatable {
         if blank(background) { names.append("背景") }
         if blank(goal) { names.append("やること") }
         if criteria.isEmpty || criteria.contains(where: blank) { names.append("達成条件") }
+        if blank(verify) { names.append("確かめ方") }
         if references.contains(where: { !$0.url.hasPrefix("https://") && !$0.url.hasPrefix("http://") }) { names.append("開ける参考リンク") }
         return names
     }
 
     public var body: String {
         var parts = ["## 背景\n\(background)", "## やること\n\(goal)", "## 達成条件\n" + criteria.map { "- [ ] \($0)" }.joined(separator: "\n")]
+        if !verify.isEmpty { parts.append("## 確かめ方\n\(verify)\n\n\(Self.report)") }
         if !notes.isEmpty { parts.append("## 補足\n\(notes)") }
         if !references.isEmpty { parts.append("## 参考\n" + references.map { "- [\($0.title)](\($0.url))" }.joined(separator: "\n")) }
         return parts.joined(separator: "\n\n")
@@ -119,9 +141,11 @@ public struct Suggestion: Codable, Equatable {
     public var approved: Bool?
     /// 指示と質問のやり取り。採用をやり直すときに渡す。
     public var dialog: [String]?
+    /// 採用したあとの様子。見回りが出力先と出典から確かめる。
+    public var progress: Progress?
 
     private enum CodingKeys: String, CodingKey {
-        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, plan, brief, approved, dialog
+        case id, dedupeKeys, draft, status, createdAt, updatedAt, snoozedUntil, dismissReason, question, plan, brief, approved, dialog, progress
         case resultUrl = "linearUrl" // 保存済みの提案と同じキーのまま読む
     }
 

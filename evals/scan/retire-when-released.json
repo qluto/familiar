@@ -1,0 +1,24 @@
+{
+  "name": "retire-when-released",
+  "data": "### github\n- https://git.example.com/acme/app/releases/tag/v2.4.0  2026-11-02 18:00  v2.4.0 を公開。リリースノートに変更点 12 件と移行手順を記載済み",
+  "known": [
+    {
+      "id": "bb0002",
+      "title": "v2.4.0 のリリースノートを書く",
+      "status": "new",
+      "sources": [
+        "https://git.example.com/acme/app/releases/tag/v2.4.0"
+      ]
+    }
+  ],
+  "expect": {
+    "suggest": [],
+    "revise": [
+      [
+        "bb0002",
+        "retire"
+      ]
+    ]
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}

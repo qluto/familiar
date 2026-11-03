@@ -5,7 +5,8 @@
     "coverage",
     "upcoming_events",
     "suggestions",
-    "revisions"
+    "revisions",
+    "follow_ups"
   ],
   "properties": {
     "coverage": {
@@ -202,6 +203,43 @@
               "string",
               "null"
             ]
+          }
+        }
+      }
+    },
+    "follow_ups": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "note",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "working",
+              "waiting",
+              "stalled",
+              "done"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https?://"
+            }
           }
         }
       }

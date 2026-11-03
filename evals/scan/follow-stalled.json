@@ -1,0 +1,29 @@
+{
+  "name": "follow-stalled",
+  "data": "### linear\n- https://issues.example.com/ACME-43  状態: Todo  作成 2026-10-28  担当なし  コメントなし。作成以降の更新なし\n### slack\n- https://chat.example.com/archives/C3/p300  2026-10-28 依頼のスレッド。それ以降の書き込みなし",
+  "known": [
+    {
+      "id": "ee0005",
+      "title": "問い合わせフォームのスパム対策を入れる",
+      "status": "accepted",
+      "sources": [
+        "https://chat.example.com/archives/C3/p300"
+      ],
+      "result": "https://issues.example.com/ACME-43",
+      "criteria": [
+        "フォームに検証を入れる"
+      ],
+      "verify": "PR を確かめる",
+      "days": 6
+    }
+  ],
+  "expect": {
+    "suggest": [],
+    "follow": {
+      "ee0005": [
+        "stalled"
+      ]
+    }
+  },
+  "now": "2026-11-03T10:00:00+09:00"
+}
