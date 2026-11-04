@@ -16,15 +16,17 @@ body{display:flex;align-items:flex-end;justify-content:flex-end;padding:0 18px 0
 <body><div id="b"><span id="s"></span><svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg></div>
 <script>
 const b = document.getElementById("b"), s = document.getElementById("s");
-const { event, window: win } = window.__TAURI__;
+const { core, event, window: win } = window.__TAURI__;
 const self = win.getCurrentWindow();
 let shown = false, over = false;
 const report = (now) => { if (now !== over) { over = now; event.emit("bubble-hover", over); } };
 event.listen("bubble-text", ({ payload }) => {
   shown = !!payload;
-  if (!shown) return report(false);
+  if (!shown) { report(false); return core.invoke("fit_bubble", { height: 0 }); }
   s.textContent = payload;
   b.classList.add("on");
+  // 本文は下端に揃えるので、窓は本文の高さに合わせる。固定の高さだと行が増えたとき上の枠が切れる
+  core.invoke("fit_bubble", { height: Math.ceil(b.getBoundingClientRect().height) + 4 });
 });
 event.listen("dim", ({ payload }) => b.classList.toggle("dim", payload));
 // クリックは常に下へ通すので、カーソルの重なりは位置で見る

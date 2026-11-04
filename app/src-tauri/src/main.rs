@@ -393,12 +393,23 @@ fn place(main: &WebviewWindow, bubble: &WebviewWindow, size: PhysicalSize<u32>) 
     bubble.set_position(PhysicalPosition::new(left, bottom - size.height as i32 - (BUBBLE_GAP * scale) as i32))
 }
 
+/// The small bubble lays the text out first, then calls fit_bubble with its height.
 #[tauri::command]
 fn bubble(app: AppHandle, text: String) -> Result<(), String> {
+    app.get_webview_window("bubble").unwrap().emit("bubble-text", &text).map_err(|e| e.to_string())
+}
+
+/// Sizes the small bubble to its laid-out text, so a long line never cuts off the top edge. 0 hides it.
+/// Showing and hiding both come from the bubble page, so they arrive in the order the texts did.
+#[tauri::command]
+fn fit_bubble(app: AppHandle, height: f64) -> Result<(), String> {
     let (main, win) = (app.get_webview_window("main").unwrap(), app.get_webview_window("bubble").unwrap());
-    win.emit("bubble-text", &text).map_err(|e| e.to_string())?;
-    if text.is_empty() { return win.hide().map_err(|e| e.to_string()); }
-    place_bubble(&main, &win).map_err(|e| e.to_string())?;
+    if height <= 0.0 { return win.hide().map_err(|e| e.to_string()); }
+    let scale = main.scale_factor().map_err(|e| e.to_string())?;
+    let width = win.outer_size().map_err(|e| e.to_string())?.to_logical::<f64>(scale).width;
+    let size = LogicalSize::new(width, height);
+    win.set_size(size).map_err(|e| e.to_string())?;
+    place(&main, &win, size.to_physical(scale)).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())
 }
 
@@ -446,7 +457,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
