@@ -316,4 +316,4 @@ Please confirm: (1) May I distribute the original and edited clips publicly in t
 - [x] CI で更新用アーカイブを作り、`latest.json` と一緒にリリースへ載せる
 - [x] 使い捨ての鍵でリリースビルドし、アーカイブと署名の場所、`latest.json` の生成を確認
 - [ ] 鍵の作成と secret の登録（`app/setup-updater-key.sh`。利用者が実行する）
-- [ ] 0.1.6 を手で入れたあと、0.1.7 への自動更新を実物で確かめる
+- [ ] 0.1.6 を手で入れたあと、0.2.0 への自動更新を実物で確かめる
