@@ -317,3 +317,4 @@ Please confirm: (1) May I distribute the original and edited clips publicly in t
 - [x] 使い捨ての鍵でリリースビルドし、アーカイブと署名の場所、`latest.json` の生成を確認
 - [ ] 鍵の作成と secret の登録（`app/setup-updater-key.sh`。利用者が実行する）
 - [ ] 0.1.6 を手で入れたあと、0.2.0 への自動更新を実物で確かめる
+- [ ] 0.2.0 → 0.2.1 で、更新前の知らせ（吹き出しと大きな吹き出しの上部）と「今すぐ入れ替える」を実物で確かめる
