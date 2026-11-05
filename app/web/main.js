@@ -197,6 +197,7 @@ const POLL_SECONDS = 2, HEADLINE = 30;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
 let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };
 let panelOpen = false, settingsOpen = false, lastBubble = null, lastNotch = null, reply = "", notchMode = false;
+let incoming = ""; // 入れ替えを待っている新しい版
 const covered = () => panelOpen || settingsOpen; // 大きな吹き出しのどちらかが開いている
 // 全画面アプリの Space には macOS がこの窓を出さず、WebKit はそれをページの非表示として伝える
 const unseen = () => notchMode || document.hidden;
@@ -211,8 +212,11 @@ function bubbleText() {
     : live.pending > 1 ? `${title}\nほか ${live.pending - 1} 件` : title;
   if (live.pending > 0 && live.held > 0) return `${fresh}。\n後回しの件も ${live.held} 件残っています`;
   if (live.pending > 0) return fresh;
-  return live.held > 0 ? `後回しの件が ${live.held} 件残っています` : "";
+  if (live.held > 0) return `後回しの件が ${live.held} 件残っています`;
+  // 再起動は手が離れてからなので、戻ってきた人にも見えるよう入れ替えまで出しておく
+  return incoming ? updateNotice(incoming) : "";
 }
+const updateNotice = (version) => `新しいバージョン ${version} が届きました。\n手が空いたときに入れ替えます`;
 // 空のオブジェクトならノッチの窓を隠す
 function notchState() {
   const state = {};
@@ -373,7 +377,8 @@ function startPolling() {
   startHotkey();
   startSettings();
   life();
-  // 自動更新で再起動したあと、一度だけ知らせる
+  // 新しい版は入れ替える前に知らせ、再起動したあとにもう一度だけ知らせる
+  tauri?.event.listen("update-ready", ({ payload }) => { incoming = payload; say(updateNotice(payload), 20); });
   const updated = tauri && await tauri.core.invoke("just_updated");
   if (updated) say(`バージョン ${updated} になりました`);
 })();

@@ -292,9 +292,25 @@ text.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.isComposing
 
 function showError(e) { thread.append(el("div", { className: "line error", textContent: String(e) })); }
 
+// 入れ替えを待っている新しい版。ボタンで今すぐ再起動する
+function showUpdate(version) {
+  if (!version) return;
+  $("update-text").textContent = `新しいバージョン ${version} が届きました`;
+  $("update").hidden = false;
+}
+$("update-now").onclick = async () => {
+  const button = $("update-now");
+  button.disabled = true;
+  button.textContent = "入れ替えています…";
+  try { await core.invoke("restart_now"); }
+  catch (e) { button.disabled = false; button.textContent = "今すぐ入れ替える"; showError(e); }
+};
+event.listen("update-ready", ({ payload }) => showUpdate(payload));
+
 event.listen("panel-open", async () => {
   opened = true;
   document.body.classList.toggle("notch", (await core.invoke("display")).mode === "notch");
+  showUpdate(await core.invoke("update_ready"));
   await core.invoke("fit_panel", { height: Math.min(640, screen.availHeight - 60) });
   try {
     const state = await reload();
