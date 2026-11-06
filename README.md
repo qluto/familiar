@@ -59,7 +59,7 @@ familiar eval                   # 見回りの判断を架空の情報源で確�
 app/install.sh                  # ビルドして /Applications へ入れる
 ```
 
-企画は [`docs/plan.md`](docs/plan.md)、リリースの手順は [`docs/release.md`](docs/release.md)。
+企画は [`docs/plan.md`](docs/plan.md)、他のエージェントから学んだことは [`docs/research.md`](docs/research.md)、リリースの手順は [`docs/release.md`](docs/release.md)。
 
 ## ライセンス
 [MIT](LICENSE)
