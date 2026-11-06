@@ -100,7 +100,7 @@ function delegated(s) {
 function topicRow(s, group) {
   const pairs = group.filter((i) => i.role === "you").length;
   if (!isOpen(s)) {
-    const label = `「${s.draft.title}」 ${pairs} 往復 → ${s.status === "accepted" ? delegated(s) : "見送り"}`;
+    const label = `「${s.draft.title}」 ${pairs} 往復 → ${s.status === "accepted" ? delegated(s) : s.status === "handled" ? "自分で済ませた" : "見送り"}`;
     return fold(`topic:${group[0].at}`, "scan", label, (box) => box.append(...group.map((i) => talkLine(i))));
   }
   return el("div", { className: "topic" }, el("h3", { textContent: `「${s.draft.title}」について` }), ...group.map((i) => talkLine(i, s)));
@@ -175,8 +175,12 @@ function acts(s) {
     const words = taking(s);
     act(["accept", s.id, ...(words ? ["--note", words] : [])]);
   } });
-  const snooze = el("button", { textContent: "後で", onclick: () => act(["snooze", s.id]) });
-  return [accept, snooze, dismiss("却下"), talk];
+  // 委ねるまでもなく自分で終えたもの。添えた言葉は日々のノートに残る
+  const handled = el("button", { textContent: "済ませた", onclick: () => {
+    const words = taking(s);
+    act(["handled", s.id, ...(words ? [words] : [])]);
+  } });
+  return [accept, handled, dismiss("却下"), talk];
 }
 function card(s, compact) {
   const d = s.draft;

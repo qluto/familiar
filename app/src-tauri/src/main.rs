@@ -343,7 +343,7 @@ fn live() -> String {
 /// Runs the familiar CLI. Accepting takes seconds, so this stays off the main thread.
 #[tauri::command]
 async fn familiar(args: Vec<String>) -> Result<String, String> {
-    const ALLOWED: [&str; 10] = ["list", "accept", "dismiss", "snooze", "say", "thread", "apply", "discard", "runs", "log"];
+    const ALLOWED: [&str; 10] = ["list", "accept", "dismiss", "handled", "say", "thread", "apply", "discard", "runs", "log"];
     if !args.first().is_some_and(|c| ALLOWED.contains(&c.as_str())) {
         return Err("command not allowed".into());
     }

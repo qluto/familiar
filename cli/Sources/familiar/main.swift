@@ -20,8 +20,8 @@ usage: familiar <command>
   log <id> [--json]                        実行の記録を読みやすくして表示する
   eval [--model MODEL] [--only 名前] [--dir 場所]
                                            見回りの判断を架空の情報源で確かめる（既定: haiku、evals/scan）
+  handled <id> [メモ]                       自分で済ませた
   dismiss <id> [理由]
-  snooze <id> [時間数]                      既定: 24
 """
 
 struct Args {
@@ -198,19 +198,17 @@ func run() throws {
             decided = s
         }
         if let decided { try Workspace(paths: paths).record("却下", decided, detail: reason) }
-    case "snooze":
+    case "handled":
         let args = try Args(rest, valued: [])
-        guard let hours = Double(args.positional.dropFirst().first ?? "24"), hours > 0 else {
-            throw FamiliarError.invalidState("時間数が正しくありません")
-        }
+        let note = args.positional.dropFirst().joined(separator: " ")
         var decided: Suggestion?
         try store.transition(try args.id()) { s in
             guard s.status.isOpen else { throw FamiliarError.invalidState("\(s.id) は \(s.status.rawValue) です") }
-            s.status = .snoozed
-            s.snoozedUntil = Date().addingTimeInterval(hours * 3600)
+            s.status = .handled
+            s.snoozedUntil = nil
             decided = s
         }
-        if let decided { try Workspace(paths: paths).record("後で", decided) }
+        if let decided { try Workspace(paths: paths).record("自分で済ませた", decided, detail: note) }
     default:
         print(usage)
         exit(2)

@@ -2,7 +2,8 @@ import CryptoKit
 import Foundation
 
 public enum Status: String, Codable, CaseIterable {
-    case new, accepting, accepted, snoozed, dismissed
+    /// handled: 委ねるまでもなく、ユーザーが自分で済ませた。snoozed は以前の「後で」で、残っているものだけが起きてくる
+    case new, accepting, accepted, snoozed, dismissed, handled
 
     /// まだ人の判断を待っている状態。
     public var isOpen: Bool { self == .new || self == .snoozed }

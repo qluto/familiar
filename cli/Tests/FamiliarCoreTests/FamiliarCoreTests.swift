@@ -75,6 +75,15 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     #expect(try store.unseen([draft("again"), fresh]) == [fresh])
 }
 
+@Test func handledIsDecidedAndNotSuggestedAgain() throws {
+    let store = Store(paths: tempPaths())
+    let id = try #require(store.merge([draft()]).first).id
+    try store.transition(id) { $0.status = .handled }
+    #expect(!Status.handled.isOpen)
+    #expect(try store.unseen([draft("again")]).isEmpty)
+    #expect(try store.load().first?.status == .handled)
+}
+
 @Test func upcomingSkipsUnreadableDates() {
     let out = ScanOutput(coverage: [], upcoming_events: [
         .init(start: "2026-11-02T10:00:00+09:00", end: "2026-11-02T10:30:00+09:00"),
