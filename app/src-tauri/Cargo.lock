@@ -755,6 +755,7 @@ dependencies = [
 name = "familiar-mascot"
 version = "0.2.2"
 dependencies = [
+ "block2",
  "libc",
  "objc2",
  "objc2-app-kit",

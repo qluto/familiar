@@ -375,6 +375,88 @@ fn open_url(url: String) -> Result<(), String> {
     Command::new("open").arg(url).status().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Where the mascot sits: logical px from the bottom-right corner of a display to the bottom-right corner of her window.
+/// Dragging her moves the anchor. When displays change, she returns to it instead of staying where macOS pushed her.
+struct Anchor {
+    display: Option<String>,
+    right: f64,
+    bottom: f64,
+    screens: Vec<String>,           // the display layout the anchor was last applied to
+    placed: Option<LogicalPosition<f64>>, // where we last put her, so our own move is not taken for a drag
+}
+
+/// Logical origin and size. tao reports a display's position in its own scale, so each is divided by that.
+fn logical_frame(mon: &tauri::Monitor) -> (f64, f64, f64, f64) {
+    let (pos, size, scale) = (mon.position(), mon.size(), mon.scale_factor());
+    (pos.x as f64 / scale, pos.y as f64 / scale, size.width as f64 / scale, size.height as f64 / scale)
+}
+
+fn screens(win: &WebviewWindow) -> tauri::Result<Vec<String>> {
+    Ok(win.available_monitors()?.iter().map(|m| format!("{:?} {:?} {:?} {}", m.name(), m.position(), m.size(), m.scale_factor())).collect())
+}
+
+/// The anchored spot on its display, or on the primary display while that one is disconnected.
+fn anchored(win: &WebviewWindow, a: &Anchor) -> tauri::Result<Option<LogicalPosition<f64>>> {
+    let monitors = win.available_monitors()?;
+    let Some(mon) = monitors.into_iter().find(|m| m.name() == a.display.as_ref()).or(win.primary_monitor()?) else { return Ok(None) };
+    let (x, y, w, h) = logical_frame(&mon);
+    let size = win.outer_size()?.to_logical::<f64>(win.scale_factor()?);
+    let right = a.right.clamp(0.0, (w - size.width).max(0.0));
+    let bottom = a.bottom.clamp(0.0, (h - size.height).max(0.0));
+    Ok(Some(LogicalPosition::new(x + w - size.width - right, y + h - size.height - bottom)))
+}
+
+/// Puts the mascot back on her anchor for the current display layout.
+fn reanchor(app: &AppHandle) -> tauri::Result<()> {
+    let win = app.get_webview_window("main").unwrap();
+    let target = {
+        let state = app.state::<Mutex<Anchor>>();
+        let mut a = state.lock().unwrap();
+        a.screens = screens(&win)?;
+        let target = anchored(&win, &a)?;
+        a.placed = target;
+        target
+    }; // set_position reports Moved, whose handler takes the lock
+    if let Some(pos) = target { win.set_position(pos)?; }
+    for label in ["bubble", "panel", "settings"] { place_bubble(&win, &app.get_webview_window(label).unwrap())?; }
+    Ok(())
+}
+
+/// After a move: re-anchor if the display layout changed, otherwise the user dragged her, so remember the spot.
+fn moved(app: &AppHandle, win: &WebviewWindow) -> tauri::Result<()> {
+    let state = app.state::<Mutex<Anchor>>();
+    let mut a = state.lock().unwrap();
+    if screens(win)? != a.screens {
+        drop(a);
+        return reanchor(app);
+    }
+    let scale = win.scale_factor()?;
+    let pos = win.outer_position()?.to_logical::<f64>(scale);
+    if a.placed.is_some_and(|p| (p.x - pos.x).abs() < 1.0 && (p.y - pos.y).abs() < 1.0) { return Ok(()); }
+    let Some(mon) = win.current_monitor()? else { return Ok(()) };
+    let (x, y, w, h) = logical_frame(&mon);
+    let size = win.outer_size()?.to_logical::<f64>(scale);
+    a.display = mon.name().cloned();
+    a.right = x + w - pos.x - size.width;
+    a.bottom = y + h - pos.y - size.height;
+    a.placed = None;
+    Ok(())
+}
+
+/// macOS moves or leaves windows as they are when a display is connected or removed, or a full-screen app changes the resolution.
+fn watch_screens(app: AppHandle) {
+    use objc2_app_kit::NSApplicationDidChangeScreenParametersNotification;
+    use objc2_foundation::NSNotificationCenter;
+    let block = block2::RcBlock::new(move |_| {
+        if let Err(e) = reanchor(&app) { eprintln!("reanchor: {e}"); }
+    });
+    let center = NSNotificationCenter::defaultCenter();
+    let observer = unsafe {
+        center.addObserverForName_object_queue_usingBlock(Some(NSApplicationDidChangeScreenParametersNotification), None, None, &block)
+    };
+    std::mem::forget(observer); // observes for the life of the app
+}
+
 fn place_bubble(main: &WebviewWindow, bubble: &WebviewWindow) -> tauri::Result<()> {
     place(main, bubble, bubble.outer_size()?)
 }
@@ -467,14 +549,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let win = app.get_webview_window("main").unwrap();
-            if let (Ok(Some(mon)), Ok(size)) = (win.primary_monitor(), win.outer_size()) {
-                let (area, pos) = (mon.size(), mon.position());
-                let margin = (24.0 * mon.scale_factor()) as i32;
-                win.set_position(PhysicalPosition::new(
-                    pos.x + area.width as i32 - size.width as i32 - margin,
-                    pos.y + area.height as i32 - size.height as i32,
-                ))?;
-            }
+            let display = win.primary_monitor()?.and_then(|m| m.name().cloned());
+            app.manage(Mutex::new(Anchor { display, right: 24.0, bottom: 0.0, screens: vec![], placed: None }));
+            reanchor(app.handle())?;
+            watch_screens(app.handle().clone());
             win.set_ignore_cursor_events(true)?;
             if display_mode() != "notch" { win.show()?; }
             float(&app.get_webview_window("notch").unwrap(), Some(NOTCH_LEVEL), false)?;
@@ -485,9 +563,10 @@ fn main() {
             bubble.set_ignore_cursor_events(true)?;
             let panel = app.get_webview_window("panel").unwrap();
             let settings = app.get_webview_window("settings").unwrap();
-            let main = win.clone();
+            let (main, handle) = (win.clone(), app.handle().clone());
             win.on_window_event(move |e| {
                 if let WindowEvent::Moved(_) = e {
+                    if let Err(e) = moved(&handle, &main) { eprintln!("moved: {e}"); }
                     let _ = place_bubble(&main, &bubble);
                     let _ = place_bubble(&main, &panel);
                     let _ = place_bubble(&main, &settings);
