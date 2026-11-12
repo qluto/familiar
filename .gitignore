@@ -8,3 +8,5 @@ app/src-tauri/binaries/
 
 # この場限りの作業メモ
 tasks/todo.md
+.playwright-mcp/
+output/
