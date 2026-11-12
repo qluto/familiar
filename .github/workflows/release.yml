@@ -26,8 +26,12 @@ jobs:
           swift test --package-path cli
           node app/qa_graph.mjs
           node app/qa_markdown.mjs
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+      # 依存のコンパイル結果は cache.yml が main で作る。タグで作っても次のタグから読めないので、ここでは保存しない
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+          shared-key: app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build, sign and notarize the app
         working-directory: app/src-tauri
         env:
@@ -37,7 +41,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         # 自動更新用の署名付きアーカイブも作る。手元の install.sh は鍵なしで作れるよう、CI でだけ有効にする
-        run: cargo tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+        # CLI は npm のビルド済みを使う。cargo install はアプリと別に依存を丸ごとコンパイルし、7 分ほどかかっていた
+        run: npx --yes @tauri-apps/cli@2 build --config '{"bundle":{"createUpdaterArtifacts":true}}'
       - name: Notarize and staple the dmg
         run: |
           dmg=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg)
