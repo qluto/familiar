@@ -122,10 +122,13 @@ public struct Store {
         try Data(body.utf8).write(to: paths.suggestions, options: .atomic)
     }
 
-    private func locked<T>(_ body: () throws -> T) throws -> T {
-        try FileManager.default.createDirectory(at: paths.state, withIntermediateDirectories: true)
-        let fd = open(paths.lock.path, O_CREAT | O_RDWR, 0o600)
-        guard fd >= 0 else { throw FamiliarError.failed("ロックを開けません: \(paths.lock.path)") }
+    private func locked<T>(_ body: () throws -> T) throws -> T { try Self.exclusive(paths.lock, body) }
+
+    /// 別のプロセスと重ならないように body を動かす。同じプロセスの中でも入れ子にしない（flock は開くごとに別のロックになる）。
+    static func exclusive<T>(_ lock: URL, _ body: () throws -> T) throws -> T {
+        try FileManager.default.createDirectory(at: lock.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let fd = open(lock.path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { throw FamiliarError.failed("ロックを開けません: \(lock.path)") }
         defer { close(fd) }
         guard flock(fd, LOCK_EX) == 0 else { throw FamiliarError.failed("ロックを取得できません") }
         defer { flock(fd, LOCK_UN) }

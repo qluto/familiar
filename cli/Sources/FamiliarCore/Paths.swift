@@ -36,6 +36,7 @@ public struct Paths {
     public var schedule: URL { state.appendingPathComponent("schedule.json") }
     var lock: URL { state.appendingPathComponent("state.lock") }
     var scanLock: URL { state.appendingPathComponent("scan.lock") }
+    var proposalLock: URL { state.appendingPathComponent("proposal.lock") }
 }
 
 public struct Config: Codable {

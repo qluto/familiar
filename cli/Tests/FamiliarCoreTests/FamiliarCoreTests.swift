@@ -426,6 +426,16 @@ func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Pat
     #expect(try workspace.read("memory/previous-OUTPUT.md") == "前")
 }
 
+@Test func aLaterTurnKeepsTheProposalForOtherFiles() throws {
+    let (chat, _, paths) = try chatFixture(chatTurn(["output": "後"]))
+    _ = try chat.say("出力を直して")
+    let next = Conversation(paths: paths, agent: FakeAgent(output: chatTurn(["heartbeat": "見回りの案", "output": "後2"])))
+    let state = try next.say("見回りも")
+    #expect(state.proposal.map(\.file) == ["HEARTBEAT.md", "OUTPUT.md"])
+    #expect(state.proposal.map(\.after) == ["見回りの案", "後2"])
+    #expect(state.items.map(\.role) == ["you", "familiar", "you", "familiar"])
+}
+
 @Test func applyRefusesAFileChangedAfterTheProposal() throws {
     let (chat, workspace, _) = try chatFixture(chatTurn(["output": "後"]))
     _ = try chat.say("直して")

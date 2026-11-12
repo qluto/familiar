@@ -26,7 +26,12 @@ public struct Thread {
     public init(paths: Paths) { url = paths.state.appendingPathComponent("thread.jsonl") }
 
     public func append(_ role: String, _ text: String, run: String? = nil, about: String? = nil, found: Int? = nil, now: Date = Date()) throws {
-        let line = try Store.encoder.encode(ThreadItem(at: now, role: role, text: text, run: run, about: about, found: found)) + Data([0x0A])
+        try append([ThreadItem(at: now, role: role, text: text, run: run, about: about, found: found)])
+    }
+
+    /// 続けて読むべき行は 1 回で書き、同時に動く別の操作の行が間に入らないようにする。
+    func append(_ items: [ThreadItem]) throws {
+        let line = try items.reduce(into: Data()) { $0 += try Store.encoder.encode($1) + Data([0x0A]) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
         guard fd >= 0 else { throw FamiliarError.failed("thread.jsonl を開けません") }
@@ -125,6 +130,13 @@ public struct Conversation {
         return FileManager.default.fileExists(atPath: workspace.file("BOOTSTRAP.md").path)
     }
 
+    /// 変更案の読み書きは 1 つずつ。反映の途中に新しい案が書かれて消えることがないようにする。
+    private func proposing<T>(_ body: () throws -> T) throws -> T { try Store.exclusive(paths.proposalLock, body) }
+
+    private func write(_ changes: [Change]) throws {
+        try JSONEncoder().encode(changes.sorted { $0.file < $1.file }).write(to: proposalFile, options: .atomic)
+    }
+
     private func proposal() -> [Change] {
         (try? Data(contentsOf: proposalFile)).flatMap { try? JSONDecoder().decode([Change].self, from: $0) } ?? []
     }
@@ -179,18 +191,20 @@ public struct Conversation {
         // 話題を選ばずに話しても、その提案についての話なら結び付ける
         let known = try turn.about.flatMap { id in try store.load().contains { $0.id == id } ? id : nil }
         let topic = about ?? known ?? added.first?.id
-        if let words {
-            try thread.append("you", words, about: topic, now: now)
-            try workspace.remember("話した あなた: \(words)", now: now)
+        if let words { try workspace.remember("話した あなた: \(words)", now: now) }
+        let you = words.map { ThreadItem(at: now, role: "you", text: $0, about: topic) }
+        try thread.append((you.map { [$0] } ?? []) + [ThreadItem(at: now, role: "familiar", text: turn.message, about: topic)])
+        let changes = try proposing {
+            let changes = turn.files.changes
+                .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
+                .filter { $0.before != $0.after }
+            guard !changes.isEmpty else { return changes }
+            // 残っている案のうち、別のファイルの分は消さない
+            let kept = proposal().filter { old in !changes.contains { $0.file == old.file } }
+            try write(kept + changes)
+            return changes
         }
-        try thread.append("familiar", turn.message, about: topic, now: now)
-        let changes = turn.files.changes
-            .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
-            .filter { $0.before != $0.after }
-            .sorted { $0.file < $1.file }
-        if !changes.isEmpty {
-            try JSONEncoder().encode(changes).write(to: proposalFile, options: .atomic)
-        } else if turn.done {
+        if changes.isEmpty && turn.done {
             // 既定のままでよいと言われたときは、反映するものがない
             try? FileManager.default.removeItem(at: workspace.file("BOOTSTRAP.md"))
         }
@@ -238,33 +252,38 @@ public struct Conversation {
     /// 会話で作った案が残っているときは、それを上書きしない。
     @discardableResult
     public func propose(_ files: [String: String], reason: String, now: Date = Date()) throws -> Bool {
-        guard proposal().isEmpty else { return false }
-        let changes = files.filter { Self.files.contains($0.key) }
-            .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
-            .filter { $0.before != $0.after }
-            .sorted { $0.file < $1.file }
+        let changes = try proposing { () -> [Change] in
+            guard proposal().isEmpty else { return [] }
+            let changes = files.filter { Self.files.contains($0.key) }
+                .map { Change(file: $0.key, before: current($0.key), after: $0.value) }
+                .filter { $0.before != $0.after }
+            if !changes.isEmpty { try write(changes) }
+            return changes
+        }
         guard !changes.isEmpty else { return false }
-        try JSONEncoder().encode(changes).write(to: proposalFile, options: .atomic)
-        try thread.append("familiar", "\(changes.map(\.file).joined(separator: "、")) の変更案を作りました。\(reason)", now: now)
+        try thread.append("familiar", "\(changes.sorted { $0.file < $1.file }.map(\.file).joined(separator: "、")) の変更案を作りました。\(reason)", now: now)
         return true
     }
 
     /// 案を作ったあとに整理や手で変わっていたら、上書きせず止める。
     public func apply() throws -> State {
-        let changes = proposal()
-        guard !changes.isEmpty else { throw FamiliarError.invalidState("反映する変更案がありません") }
-        if let moved = changes.first(where: { current($0.file) != $0.before }) {
-            throw FamiliarError.invalidState("\(moved.file) が案を作ったあとに変わりました。もう一度案を作ってもらってください")
+        let changes = try proposing { () -> [Change] in
+            let changes = proposal()
+            guard !changes.isEmpty else { throw FamiliarError.invalidState("反映する変更案がありません") }
+            if let moved = changes.first(where: { current($0.file) != $0.before }) {
+                throw FamiliarError.invalidState("\(moved.file) が案を作ったあとに変わりました。もう一度案を作ってもらってください")
+            }
+            try workspace.replace(Dictionary(uniqueKeysWithValues: changes.map { ($0.file, $0.after) }))
+            try? FileManager.default.removeItem(at: workspace.file("BOOTSTRAP.md"))
+            try? FileManager.default.removeItem(at: proposalFile)
+            return changes
         }
-        try workspace.replace(Dictionary(uniqueKeysWithValues: changes.map { ($0.file, $0.after) }))
-        try? FileManager.default.removeItem(at: workspace.file("BOOTSTRAP.md"))
-        try? FileManager.default.removeItem(at: proposalFile)
         try thread.append("familiar", "\(changes.map(\.file).joined(separator: "、")) を保存しました")
         return try state()
     }
 
     public func discard() throws -> State {
-        try? FileManager.default.removeItem(at: proposalFile)
+        try proposing { try? FileManager.default.removeItem(at: proposalFile) }
         return try state()
     }
 }

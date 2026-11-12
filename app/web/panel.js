@@ -11,9 +11,14 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 const familiar = (...args) => core.invoke("familiar", { args });
 
 const REFRESH_MS = 3000;
-let lastThread = "", lastCards = "", timer = null, busy = false, opened = false, generation = 0, suggestions = [], proposal = [], past = [];
+let lastThread = "", lastCards = "", timer = null, opened = false, generation = 0, suggestions = [], proposal = [], past = [];
 const unfolded = new Set(); // 開いている畳みと詳細。描き直しても保つ
 const logs = new Map(); // 読み終えた見回りの記録。描き直しても読み直さない
+// 送ったものは止めずに受け付ける。言葉は 1 本の会話なので届いた順に 1 つずつ、カードの操作は提案ごとに別々に動かす
+const queue = []; // 返事を待つ言葉 { args, words, node }
+let talking = false;
+const working = new Set(); // 動いているカードの操作。提案の id か "proposal"
+const extras = []; // まだ記録にない行（送信待ち、考え中、失敗）。流れを描き直しても末尾に残す
 const STALE_MS = 11 * 60 * 1000; // 実行の上限を過ぎても進んでいなければ、止まったとみなす
 let topic = null; // 話題にしている提案か実行 { id, label }
 let voice = { stt: false, realtime: false, tts: false, rate: 24000 }; // 設定で音声のサーバを指定したものだけ使う
@@ -38,13 +43,22 @@ function setTopic(next) {
 }
 $("chip-clear").onclick = () => setTopic(null);
 
-function setBusy(on) {
-  busy = on;
-  text.disabled = send.disabled = on;
-  if (!Speech.recording()) mic.disabled = on;
-  document.querySelectorAll("#cards button").forEach((b) => (b.disabled = on));
-  if (!on) text.focus();
+// 流れの末尾に置く。after があればその行の直後に
+function keep(node, after) {
+  const at = after ? extras.indexOf(after) + 1 : 0;
+  if (at > 0) { extras.splice(at, 0, node); after.after(node); }
+  else { extras.push(node); thread.append(node); }
+  return node;
 }
+function drop(...nodes) {
+  for (const node of nodes) {
+    if (!node) continue;
+    const at = extras.indexOf(node);
+    if (at >= 0) extras.splice(at, 1);
+    node.remove();
+  }
+}
+const waiting = (label) => el("div", { className: "line wait", textContent: label });
 
 // ── 会話 ─────────────────────────
 const isOpen = (s) => s.status === "new" || s.status === "snoozed" || s.status === "accepting";
@@ -129,25 +143,51 @@ function rows(items) {
 }
 
 // ── カード ───────────────────────
-async function act(args, restore) {
-  if (busy) return;
-  setBusy(true);
+// 1 つの操作を動かし、終わったら流れを読み直す。shown は記録に載るまで見せていた行。失敗したら false
+async function run(args, shown, failed = showError) {
   const started = Date.now();
-  const wait = el("div", { className: "line wait", textContent: "考えています…" });
-  thread.append(wait);
-  toEnd();
   try {
-    const out = await familiar(...args);
-    wait.remove();
-    setBusy(false);
+    await familiar(...args);
+    drop(...shown);
     readAloud((await reload()).items, started);
-    return out;
+    return true;
   } catch (e) {
-    wait.replaceWith(el("div", { className: "line error", textContent: String(e) }));
-    if (restore) text.value = restore;
-    setBusy(false);
+    drop(...shown);
+    failed(e);
     await reload().catch(() => {});
+    return false;
   }
+}
+// カードの操作。止めるのはその提案のボタンだけ
+async function act(args, key, label) {
+  if (working.has(key)) return;
+  working.add(key);
+  draw(true);
+  const wait = keep(waiting(label ? `「${label}」について考えています…` : "考えています…"));
+  toEnd();
+  await run(args, [wait]);
+  working.delete(key);
+  draw(true);
+}
+// 言葉は前の返事が届いてから送る。前の返事を踏まえて答え、流れも送った順に並ぶ
+function enqueue(job) {
+  queue.push(job);
+  talk();
+}
+async function talk() {
+  if (talking) return;
+  talking = true;
+  while (queue.length) {
+    const job = queue.shift();
+    const wait = keep(waiting("考えています…"), job.node);
+    await run(job.args, [wait, job.node], (e) => {
+      // 送れなかった言葉は入力欄に戻す。打ちかけの字があれば消さず、言葉を知らせに残す
+      const back = job.words && !text.value.trim();
+      if (back) text.value = job.words;
+      showError(back || !job.words ? e : `「${job.words}」を送れませんでした: ${e}`);
+    });
+  }
+  talking = false;
 }
 // 話題にしている提案なら、入力欄の言葉を判断に添える
 function taking(s) {
@@ -161,27 +201,28 @@ function acts(s) {
   const talk = el("button", { className: "talk", textContent: "話す", onclick: () => setTopic({ id: s.id, label: `「${s.draft.title}」について` }) });
   const dismiss = (name) => el("button", { textContent: name, onclick: () => {
     const words = taking(s);
-    act(["dismiss", s.id, ...(words ? [words] : [])]);
+    act(["dismiss", s.id, ...(words ? [words] : [])], s.id, s.draft.title);
   } });
+  if (working.has(s.id)) return [el("span", { className: "meta", textContent: "考えています…" }), talk];
   if (s.status === "accepting") {
     if (Date.now() - Date.parse(s.updatedAt) < STALE_MS) return [el("span", { className: "meta", textContent: "進めています" })];
     return [el("span", { className: "meta", textContent: "止まったようです。途中まで反映されたかもしれません" }),
-      el("button", { textContent: "やり直す", onclick: () => act(["accept", s.id, "--force"]) })];
+      el("button", { textContent: "やり直す", onclick: () => act(["accept", s.id, "--force"], s.id, s.draft.title) })];
   }
   if (s.plan) return [
     el("button", { className: "go", textContent: "進める", onclick: () => {
       const words = taking(s); // 話していた条件があれば、承認に添える
-      act(["accept", s.id, "--approve", ...(words ? ["--note", words] : [])]);
+      act(["accept", s.id, "--approve", ...(words ? ["--note", words] : [])], s.id, s.draft.title);
     } }),
     dismiss("やめる"), talk];
   const accept = el("button", { className: "go", textContent: "採用", onclick: () => {
     const words = taking(s);
-    act(["accept", s.id, ...(words ? ["--note", words] : [])]);
+    act(["accept", s.id, ...(words ? ["--note", words] : [])], s.id, s.draft.title);
   } });
   // 委ねるまでもなく自分で終えたもの。添えた言葉は日々のノートに残る
   const handled = el("button", { textContent: "済ませた", onclick: () => {
     const words = taking(s);
-    act(["handled", s.id, ...(words ? [words] : [])]);
+    act(["handled", s.id, ...(words ? [words] : [])], s.id, s.draft.title);
   } });
   return [accept, handled, dismiss("却下"), talk];
 }
@@ -235,12 +276,12 @@ function changeCard(changes) {
     ...changes.flatMap((c) => [el("h3", { textContent: c.file }),
       ...diff(c.before, c.after).map(([kind, line]) =>
         el("div", { className: `diff ${kind}`, textContent: line || " " }))]),
-    el("div", { className: "actions" },
-      el("button", { className: "go", textContent: "反映", onclick: () => act(["apply"]) }),
-      el("button", { textContent: "取り消す", onclick: () => act(["discard"]) })));
+    el("div", { className: "actions" }, ...(working.has("proposal") ? [el("span", { className: "meta", textContent: "考えています…" })] : [
+      el("button", { className: "go", textContent: "反映", onclick: () => act(["apply"], "proposal", "指示の変更案") }),
+      el("button", { textContent: "取り消す", onclick: () => act(["discard"], "proposal", "指示の変更案") })])));
 }
 function draw(force) {
-  const key = JSON.stringify([suggestions.map((s) => [s.id, s.status, s.updatedAt, s.draft.title, s.plan, s.question]), proposal, topic?.id ?? null, past.length]);
+  const key = JSON.stringify([suggestions.map((s) => [s.id, s.status, s.updatedAt, s.draft.title, s.plan, s.question]), proposal, topic?.id ?? null, past.length, [...working]]);
   if (!force && key === lastCards) return false;
   lastCards = key;
   const fresh = suggestions.filter((s) => s.status === "new");
@@ -251,7 +292,6 @@ function draw(force) {
   $("shelf-title").textContent = `判断待ち ${shown.length} 件`;
   // 計画や差分を読むときは、狭い枠に閉じ込めない
   shelf.classList.toggle("reading", proposal.length > 0 || waiting.some((s) => s.plan || s.question || unfolded.has(`card:${s.id}`)));
-  if (busy) setBusy(true);
   heading.textContent = fresh.length ? `気になることが ${fresh.length} 件あります` : "familiar";
   return true;
 }
@@ -272,39 +312,45 @@ async function reload() {
   const key = JSON.stringify([state.items.map((i) => [i.at, i.role, i.text, i.run, i.about, i.found]),
     suggestions.map((s) => [s.id, s.status, s.plan, s.question, s.draft.title])]);
   const moved = key !== lastThread;
-  if (moved) { lastThread = key; thread.replaceChildren(...rows(state.items)); }
+  if (moved) { lastThread = key; thread.replaceChildren(...rows(state.items), ...extras); }
   const changed = draw(false);
   if (follow && (moved || changed)) toEnd();
   return state;
 }
 
-$("f").addEventListener("submit", async (e) => {
+$("f").addEventListener("submit", (e) => {
   e.preventDefault();
   const words = text.value.trim();
-  if (!words || busy || Speech.recording()) return;
+  if (!words || Speech.recording()) return;
   text.value = "";
-  Speech.quiet();
+  hush();
   const about = topic;
   const s = suggestions.find((x) => x.id === about?.id);
-  thread.append(el("div", { className: "line you wait", textContent: words }));
+  // 質問や計画への返事は、そのまま採用の続きになる。その提案の操作として動かす
+  if (s && (s.question || s.plan) && !working.has(s.id)) return void act(["accept", s.id, "--note", words], s.id, s.draft.title);
+  const node = keep(el("div", { className: "line you wait", textContent: words }));
   toEnd();
-  // 質問や計画への返事は、そのまま採用の続きになる
-  const args = s && (s.question || s.plan) ? ["accept", s.id, "--note", words]
-    : ["say", "--text", words, ...(about ? ["--about", about.id] : [])];
-  thread.lastChild.dataset.pending = "1";
-  await act(args, words);
-  thread.querySelectorAll("[data-pending]").forEach((n) => n.remove());
+  enqueue({ args: ["say", "--text", words, ...(about ? ["--about", about.id] : [])], words, node });
 });
 // 変換の確定の Enter では送らない
 text.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.isComposing) e.preventDefault(); });
 
 // ── 声 ─────────────────────────
 // この操作のあとに届いた familiar の言葉を読み上げる。Markdown は記号を読まないよう、見た目の文字にする
+// 返事が重なっても、同じ行は 1 度だけ、届いた順に読む。話しかけたら、読む予定だったものも止める
+const spoken = new Set();
+let speaking = Promise.resolve(), hushed = 0;
 function readAloud(items, since) {
-  if (!voice.tts) return;
-  const said = items.filter((i) => i.role === "familiar" && Date.parse(i.at) >= since - 1000)
-    .map((i) => [...rich(i.text).children].map((block) => block.textContent).join("\n")).join("\n\n");
-  if (said) Speech.say(said).catch(showError);
+  const fresh = items.filter((i) => i.role === "familiar" && Date.parse(i.at) >= since - 1000 && !spoken.has(i.at + i.text));
+  fresh.forEach((i) => spoken.add(i.at + i.text));
+  const said = fresh.map((i) => [...rich(i.text).children].map((block) => block.textContent).join("\n")).join("\n\n");
+  if (!voice.tts || !said) return;
+  const mine = hushed;
+  speaking = speaking.then(() => mine === hushed && Speech.say(said)).catch(showError);
+}
+function hush() {
+  hushed++;
+  Speech.quiet();
 }
 // 聞いている間、声の大きさをボタンに映す。急に下がらないよう、下がるときはゆっくり
 let meter = 0;
@@ -320,7 +366,7 @@ function micIdle() {
   mic.style.setProperty("--level", 0);
   mic.classList.remove("on", "wait");
   micLabel("声で話す");
-  mic.disabled = busy;
+  mic.disabled = false;
   text.readOnly = false;
   text.placeholder = "話しかける";
 }
@@ -352,7 +398,8 @@ mic.onclick = async () => {
   text.focus();
 };
 
-function showError(e) { thread.append(el("div", { className: "line error", textContent: String(e) })); }
+// 失敗は会話を閉じるまで流れの末尾に残す
+function showError(e) { keep(el("div", { className: "line error", textContent: String(e) })); toEnd(); }
 
 // 入れ替えを待っている新しい版。ボタンで今すぐ再起動する
 function showUpdate(version) {
@@ -379,17 +426,18 @@ event.listen("panel-open", async () => {
   try {
     const state = await reload();
     toEnd();
-    if (state.onboarding && !state.items.some((i) => i.role !== "scan")) await act(["say", "--start"]);
+    if (state.onboarding && !state.items.some((i) => i.role !== "scan") && !talking) enqueue({ args: ["say", "--start"] });
   } catch (e) { showError(e); }
   clearInterval(timer);
   if (!opened) return; // 待っている間に閉じられた
-  timer = setInterval(() => { if (!busy) reload().catch(() => {}); }, REFRESH_MS);
+  timer = setInterval(() => reload().catch(() => {}), REFRESH_MS);
   text.focus();
 });
 event.listen("panel-closed", () => {
   opened = false;
   clearInterval(timer);
   Speech.cancel();
-  Speech.quiet();
+  hush();
+  drop(...extras.filter((n) => n.classList.contains("error")));
   micIdle();
 });
