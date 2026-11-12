@@ -341,17 +341,13 @@ function startPolling() {
   const w = tauri.window.getCurrentWindow();
   let accepting = false, onBubble = false, hovered = 0;
   tauri.event.listen("bubble-hover", ({ payload }) => { onBubble = payload; });
-  let pos = null, scale = 1; // 窓の位置は動いたときだけ取り直す
-  const refresh = async () => { [pos, scale] = await Promise.all([w.outerPosition(), w.scaleFactor()]); };
-  w.onMoved(refresh); refresh();
   setInterval(async () => {
     if (unseen()) {
       if (engaged && !covered() && now() - touched > ENGAGE_SECONDS) disengage();
       return;
     }
-    if (!pos) return;
-    const c = await tauri.window.cursorPosition();
-    const x = (c.x - pos.x) / scale, y = (c.y - pos.y) / scale;
+    // 窓から見たカーソルの位置（ポイント）。倍率の違う画面にいても合う
+    const [x, y] = await tauri.core.invoke("cursor");
     const inside = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight && opaque(x, y);
     const wanted = clickable() && inside;
     if (wanted !== accepting) { accepting = wanted; w.setIgnoreCursorEvents(!accepting); }
@@ -379,6 +375,7 @@ function startPolling() {
   life();
   // 新しい版は入れ替える前に知らせ、再起動したあとにもう一度だけ知らせる
   tauri?.event.listen("update-ready", ({ payload }) => { incoming = payload; say(updateNotice(payload), 20); });
+  tauri?.event.listen("say", ({ payload }) => say(payload)); // メニューから確かめたアップデートの結果など
   const updated = tauri && await tauri.core.invoke("just_updated");
   if (updated) say(`バージョン ${updated} になりました`);
 })();

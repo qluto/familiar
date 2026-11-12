@@ -202,15 +202,31 @@ fn set_hotkey(app: AppHandle, state: State<Mutex<Hotkey>>, keys: String) -> Resu
     Ok(value)
 }
 
+/// The same menu on a right-click and in the menu bar. Its items are handled in `on_menu_event`.
+fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let settings = MenuItem::with_id(app, "settings", "設定…", true, None::<&str>)?;
+    let talk = MenuItem::with_id(app, "talk", "話す", true, None::<&str>)?;
+    let check = MenuItem::with_id(app, "check-update", "アップデートを確認", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "familiar を終了", true, None::<&str>)?;
+    Menu::with_items(app, &[&talk, &settings, &check, &PredefinedMenuItem::separator(app)?, &quit])
+}
+
 #[tauri::command]
 fn context_menu(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
-    let build = || -> tauri::Result<()> {
-        let settings = MenuItem::with_id(&app, "settings", "設定…", true, None::<&str>)?;
-        let talk = MenuItem::with_id(&app, "talk", "話す", true, None::<&str>)?;
-        let quit = MenuItem::with_id(&app, "quit", "familiar を終了", true, None::<&str>)?;
-        window.popup_menu(&Menu::with_items(&app, &[&talk, &settings, &PredefinedMenuItem::separator(&app)?, &quit])?)
-    };
-    build().map_err(|e| e.to_string())
+    app_menu(&app).and_then(|menu| window.popup_menu(&menu)).map_err(|e| e.to_string())
+}
+
+/// The app has no Dock icon, and the mascot only takes clicks while called with the hotkey.
+/// The menu bar icon is the way to talk, open settings, or quit that always works.
+fn menu_bar(app: &AppHandle) -> tauri::Result<()> {
+    tauri::tray::TrayIconBuilder::with_id("main")
+        .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+        .icon_as_template(true)
+        .tooltip("familiar")
+        .menu(&app_menu(app)?)
+        .show_menu_on_left_click(true)
+        .build(app)?;
+    Ok(())
 }
 
 /// The notch in top-left logical coordinates.
@@ -325,6 +341,20 @@ fn pack_file(id: String, name: String) -> Result<Response, String> {
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+    fn CGMainDisplayID() -> u32;
+    fn CGDisplayPixelsHigh(display: u32) -> usize;
+}
+
+/// The cursor relative to the window's top-left, in points.
+/// tao converts the cursor with the primary display's scale but the window with its own display's scale,
+/// so comparing the two misses her on a display with another scale. Points are the same everywhere.
+#[tauri::command]
+fn cursor(window: WebviewWindow) -> Result<(f64, f64), String> {
+    let point = objc2_app_kit::NSEvent::mouseLocation(); // bottom-left origin on the primary display
+    let primary_height = unsafe { CGDisplayPixelsHigh(CGMainDisplayID()) } as f64; // the same flip tao uses for windows
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let pos = window.outer_position().map_err(|e| e.to_string())?.to_logical::<f64>(scale);
+    Ok((point.x - pos.x, primary_height - point.y - pos.y))
 }
 
 /// Seconds since the last keyboard or mouse input. Needs no permission and reads no input.
@@ -536,10 +566,11 @@ fn main() {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => { let _ = open_settings(app); }
             "talk" => { let _ = app.emit_to("main", "talk", ()); }
+            "check-update" => update::check_now(app.clone()),
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, cursor, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());
@@ -548,6 +579,7 @@ fn main() {
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            menu_bar(app.handle())?;
             let win = app.get_webview_window("main").unwrap();
             let display = win.primary_monitor()?.and_then(|m| m.name().cloned());
             app.manage(Mutex::new(Anchor { display, right: 24.0, bottom: 0.0, screens: vec![], placed: None }));

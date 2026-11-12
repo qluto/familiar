@@ -12,6 +12,9 @@ const RETRY_RESTART: Duration = Duration::from_secs(60);
 const IDLE_BEFORE_RESTART: f64 = 120.0;
 /// The version already installed into the bundle and waiting for a restart.
 static READY: Mutex<Option<String>> = Mutex::new(None);
+/// Held while checking, so the periodic check and the menu do not download at the same time.
+static CHECKING: Mutex<()> = Mutex::new(());
+const BUSY: &str = "already checking";
 
 /// Only the app in /Applications updates itself. A dev build or an app still running from the dmg would
 /// replace the wrong copy.
@@ -20,19 +23,43 @@ pub fn start(app: AppHandle) {
     thread::spawn(move || {
         thread::sleep(FIRST_CHECK);
         loop {
-            match tauri::async_runtime::block_on(install(&app)) {
-                Ok(Some(version)) => {
-                    // 入れ替える前に、キャラクターと大きな吹き出しが新しい版を伝える
-                    *READY.lock().unwrap() = Some(version.clone());
-                    let _ = app.emit("update-ready", version);
-                    return restart_when_quiet(&app);
-                }
-                Ok(None) => {}
+            match check(&app) {
+                Ok(true) => return restart_when_quiet(&app),
+                Ok(false) if READY.lock().unwrap().is_some() => return, // the menu found it and waits to restart
+                Ok(false) => {}
                 Err(e) => eprintln!("update: {e}"),
             }
             thread::sleep(CHECK_EVERY);
         }
     });
+}
+
+/// The menu item: check right away and say what came of it.
+pub fn check_now(app: AppHandle) {
+    if !crate::exe().starts_with("/Applications") { return say(&app, "アップデートは /Applications のアプリだけが確かめます"); }
+    if let Some(version) = READY.lock().unwrap().clone() { let _ = app.emit("update-ready", version); return; }
+    say(&app, "新しい版がないか確かめています");
+    thread::spawn(move || match check(&app) {
+        // 見つかったときは update-ready が知らせる。再起動は定期の確認と同じく、静かなときに行う
+        Ok(true) => restart_when_quiet(&app),
+        Ok(false) => say(&app, format!("最新の版です（{}）", app.package_info().version)),
+        Err(e) if e == BUSY => say(&app, "ちょうど確かめているところです"),
+        Err(e) => { eprintln!("update: {e}"); say(&app, "アップデートを確かめられませんでした") }
+    });
+}
+
+fn say(app: &AppHandle, text: impl Into<String>) { let _ = app.emit_to("main", "say", text.into()); }
+
+/// Installs a newer version if there is one and announces it. Ok(true) only for the call that installed it,
+/// so the periodic check and the menu never install or restart twice.
+fn check(app: &AppHandle) -> Result<bool, String> {
+    let _busy = CHECKING.try_lock().map_err(|_| BUSY.to_string())?;
+    if READY.lock().unwrap().is_some() { return Ok(false); }
+    let Some(version) = tauri::async_runtime::block_on(install(app)).map_err(|e| e.to_string())? else { return Ok(false) };
+    // 入れ替える前に、キャラクターと大きな吹き出しが新しい版を伝える
+    *READY.lock().unwrap() = Some(version.clone());
+    let _ = app.emit("update-ready", version);
+    Ok(true)
 }
 
 /// The newer version, once it is installed into the app bundle.
