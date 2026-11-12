@@ -3,7 +3,7 @@
 const { core, event } = window.__TAURI__;
 const $ = (id) => document.getElementById(id);
 const main = $("m"), thread = $("thread"), cards = $("cards"), shelf = $("shelf"), heading = $("h");
-const text = $("text"), send = $("send"), chip = $("chip");
+const text = $("text"), send = $("send"), chip = $("chip"), mic = $("mic");
 const close = () => core.invoke("hide_panel");
 $("close").onclick = close;
 $("settings").onclick = () => core.invoke("show_settings");
@@ -16,6 +16,7 @@ const unfolded = new Set(); // 開いている畳みと詳細。描き直して�
 const logs = new Map(); // 読み終えた見回りの記録。描き直しても読み直さない
 const STALE_MS = 11 * 60 * 1000; // 実行の上限を過ぎても進んでいなければ、止まったとみなす
 let topic = null; // 話題にしている提案か実行 { id, label }
+let voice = { stt: false, realtime: false, tts: false, rate: 24000 }; // 設定で音声のサーバを指定したものだけ使う
 
 const rich = (body) => Markdown.render(body, (url) => core.invoke("open_url", { url }));
 function el(tag, props = {}, ...children) {
@@ -40,6 +41,7 @@ $("chip-clear").onclick = () => setTopic(null);
 function setBusy(on) {
   busy = on;
   text.disabled = send.disabled = on;
+  if (!Speech.recording()) mic.disabled = on;
   document.querySelectorAll("#cards button").forEach((b) => (b.disabled = on));
   if (!on) text.focus();
 }
@@ -130,6 +132,7 @@ function rows(items) {
 async function act(args, restore) {
   if (busy) return;
   setBusy(true);
+  const started = Date.now();
   const wait = el("div", { className: "line wait", textContent: "考えています…" });
   thread.append(wait);
   toEnd();
@@ -137,7 +140,7 @@ async function act(args, restore) {
     const out = await familiar(...args);
     wait.remove();
     setBusy(false);
-    await reload();
+    readAloud((await reload()).items, started);
     return out;
   } catch (e) {
     wait.replaceWith(el("div", { className: "line error", textContent: String(e) }));
@@ -278,8 +281,9 @@ async function reload() {
 $("f").addEventListener("submit", async (e) => {
   e.preventDefault();
   const words = text.value.trim();
-  if (!words || busy) return;
+  if (!words || busy || Speech.recording()) return;
   text.value = "";
+  Speech.quiet();
   const about = topic;
   const s = suggestions.find((x) => x.id === about?.id);
   thread.append(el("div", { className: "line you wait", textContent: words }));
@@ -293,6 +297,60 @@ $("f").addEventListener("submit", async (e) => {
 });
 // 変換の確定の Enter では送らない
 text.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.isComposing) e.preventDefault(); });
+
+// ── 声 ─────────────────────────
+// この操作のあとに届いた familiar の言葉を読み上げる。Markdown は記号を読まないよう、見た目の文字にする
+function readAloud(items, since) {
+  if (!voice.tts) return;
+  const said = items.filter((i) => i.role === "familiar" && Date.parse(i.at) >= since - 1000)
+    .map((i) => [...rich(i.text).children].map((block) => block.textContent).join("\n")).join("\n\n");
+  if (said) Speech.say(said).catch(showError);
+}
+// 聞いている間、声の大きさをボタンに映す。急に下がらないよう、下がるときはゆっくり
+let meter = 0;
+function showLevel(shown = 0) {
+  if (!Speech.recording()) return mic.style.setProperty("--level", 0);
+  shown = Math.max(Speech.level(), shown * 0.85);
+  mic.style.setProperty("--level", shown.toFixed(3));
+  meter = requestAnimationFrame(() => showLevel(shown));
+}
+function micLabel(label) { mic.setAttribute("aria-label", label); mic.title = label; }
+function micIdle() {
+  cancelAnimationFrame(meter);
+  mic.style.setProperty("--level", 0);
+  mic.classList.remove("on", "wait");
+  micLabel("声で話す");
+  mic.disabled = busy;
+  text.readOnly = false;
+  text.placeholder = "話しかける";
+}
+// 聞き取った言葉は入力欄の続きに入れる。直してから送れる
+let typed = "";
+const heardText = (heard) => { text.value = [typed, heard].filter(Boolean).join(" "); text.scrollLeft = text.scrollWidth; };
+mic.onclick = async () => {
+  if (!Speech.recording()) {
+    typed = text.value.trim();
+    mic.disabled = true;
+    try { await Speech.listen({ realtime: voice.realtime, rate: voice.rate, onText: heardText }); }
+    catch (e) { micIdle(); return showError(e.name === "NotAllowedError" ? "マイクを使う許可がありません。システム設定のプライバシーとセキュリティで許可してください" : String(e.message ?? e)); }
+    mic.disabled = false;
+    mic.classList.add("on");
+    micLabel("止める");
+    showLevel();
+    text.readOnly = true; // 話している間に打った字を、途中の文で消さない
+    text.placeholder = "聞いています…";
+    return;
+  }
+  cancelAnimationFrame(meter);
+  mic.style.setProperty("--level", 0);
+  mic.classList.replace("on", "wait");
+  mic.disabled = true;
+  micLabel("文字にしています");
+  try { heardText(await Speech.finish()); }
+  catch (e) { text.value = typed; showError(e); }
+  micIdle();
+  text.focus();
+};
 
 function showError(e) { thread.append(el("div", { className: "line error", textContent: String(e) })); }
 
@@ -313,6 +371,8 @@ event.listen("update-ready", ({ payload }) => showUpdate(payload));
 
 event.listen("panel-open", async () => {
   opened = true;
+  voice = await core.invoke("voice");
+  mic.hidden = !voice.stt;
   document.body.classList.toggle("notch", (await core.invoke("display")).mode === "notch");
   showUpdate(await core.invoke("update_ready"));
   await core.invoke("fill_panel");
@@ -326,4 +386,10 @@ event.listen("panel-open", async () => {
   timer = setInterval(() => { if (!busy) reload().catch(() => {}); }, REFRESH_MS);
   text.focus();
 });
-event.listen("panel-closed", () => { opened = false; clearInterval(timer); });
+event.listen("panel-closed", () => {
+  opened = false;
+  clearInterval(timer);
+  Speech.cancel();
+  Speech.quiet();
+  micIdle();
+});

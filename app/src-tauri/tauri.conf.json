@@ -106,7 +106,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "Developer ID Application: Ryosuke Fukazawa (RS9ESGN72R)"
+      "signingIdentity": "Developer ID Application: Ryosuke Fukazawa (RS9ESGN72R)",
+      "entitlements": "Entitlements.plist"
     },
     "externalBin": [
       "binaries/familiar"

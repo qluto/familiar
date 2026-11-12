@@ -11,6 +11,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod update;
+mod voice;
 
 const BUBBLE_OVERLAP: f64 = 73.0; // logical px the bubble overlaps the mascot window, so the tail reaches her
 const BUBBLE_GAP: f64 = 12.0; // logical px between the bubble and the bottom screen edge
@@ -138,14 +139,17 @@ fn read_config() -> Result<Map<String, Value>, String> {
     }
 }
 
-/// Keeps every other key: the CLI reads this file too.
+/// Keeps every other key: the CLI reads this file too. Only the user can read it, since it may hold API keys.
 fn save_config(key: &str, value: Value) -> Result<(), String> {
     let mut config = read_config()?;
     config.insert(key.into(), value);
     let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
     fs::create_dir_all(state_dir()).map_err(|e| e.to_string())?;
     let tmp = config_path().with_extension("json.tmp");
-    fs::write(&tmp, bytes).and_then(|_| fs::rename(&tmp, config_path())).map_err(|e| e.to_string())
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(&tmp, bytes)
+        .and_then(|_| fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)))
+        .and_then(|_| fs::rename(&tmp, config_path())).map_err(|e| e.to_string())
 }
 
 /// `active` is false when the shortcut could not be registered. The page then stays clickable,
@@ -597,7 +601,8 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, fill_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, cursor, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now])
+        .manage(voice::realtime::Listening::default())
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, fill_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, cursor, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now, voice::voice, voice::voice_settings, voice::set_voice, voice::transcribe, voice::speak, voice::realtime::listen_start, voice::realtime::listen_audio, voice::realtime::listen_stop, voice::realtime::listen_cancel])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());

@@ -14,6 +14,12 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
 #note{margin:8px 0 6px;font-size:12px;color:var(--sub)}
 #note.error{color:var(--warn)}
 .hint{margin:8px 0 6px;font-size:12px;color:var(--sub)}
+.fields{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;margin-top:6px}
+.fields label{font-size:12.5px;color:var(--sub)}
+.fields input{font:inherit;font-size:13px;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:5px 9px;min-width:0;user-select:text;-webkit-user-select:text}
+.fields input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.hint.error{color:var(--warn)}
+.keys button:disabled{opacity:.5;cursor:default}
 .keys button.selected{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
 </style></head>
 <body><div id="b">
@@ -35,6 +41,25 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
     </div>
     <p id="display-note" class="hint"></p>
   </section>
+  <section aria-labelledby="h-voice">
+    <h3 id="h-voice">音声</h3>
+    <p class="hint">OpenAI 互換のサーバを指定すると使えます。URL は /v1 まで書きます。空にすると使いません</p>
+    <div class="row"><span class="name">音声認識</span><span class="keys"><button id="stt-file" type="button">一括</button><button id="stt-live" type="button">リアルタイム</button></span></div>
+    <form class="fields" id="stt" autocomplete="off">
+      <label for="stt-baseUrl">サーバ</label><input id="stt-baseUrl" name="baseUrl" placeholder="例: http://localhost:8000/v1">
+      <label for="stt-apiKey">API キー</label><input id="stt-apiKey" name="apiKey" type="password" placeholder="なければ空のまま">
+      <label for="stt-model">モデル</label><input id="stt-model" name="model" placeholder="whisper-1">
+    </form>
+    <p id="stt-note" class="hint" role="status"></p>
+    <div class="row"><span class="name">音声合成</span><span class="keys"><button id="tts-on" type="button">読み上げる</button><button id="tts-off" type="button">読み上げない</button><button id="tts-try" type="button">試す</button></span></div>
+    <form class="fields" id="tts" autocomplete="off">
+      <label for="tts-baseUrl">サーバ</label><input id="tts-baseUrl" name="baseUrl" placeholder="例: https://api.openai.com/v1">
+      <label for="tts-apiKey">API キー</label><input id="tts-apiKey" name="apiKey" type="password" placeholder="なければ空のまま">
+      <label for="tts-model">モデル</label><input id="tts-model" name="model" placeholder="gpt-4o-mini-tts">
+      <label for="tts-voice">声</label><input id="tts-voice" name="voice" placeholder="alloy">
+    </form>
+    <p id="tts-note" class="hint" role="status">会話の返事を読み上げます</p>
+  </section>
   <section aria-labelledby="h-agent">
     <h3 id="h-agent">AI への指示</h3>
     <div class="row">
@@ -45,4 +70,4 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
   </section>
 </main>
 <svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
-</div><script src="hotkey.js"></script><script src="settings.js"></script></body></html>
+</div><script src="hotkey.js"></script><script src="speech.js"></script><script src="settings.js"></script></body></html>

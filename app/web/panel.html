@@ -86,6 +86,14 @@ footer{flex:none;padding:8px 18px 12px;display:grid;gap:5px;border-top:1.5px das
 #chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chip .icon{width:18px;height:18px;line-height:18px;flex:none}
 form{display:flex;gap:6px;align-items:center}
+/* マイク。聞いている間は、声の大きさ（--level: 0〜1）に合わせて輪が広がり、少しふくらむ */
+#mic{--level:0;flex:none;width:28px;height:28px;padding:0;display:grid;place-items:center;transition:box-shadow 90ms linear,transform 90ms linear}
+#mic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#mic[hidden]{display:none}
+#mic.on{background:var(--warn);border-color:var(--warn);color:var(--paper);box-shadow:0 0 0 calc(2px + var(--level) * 7px) color-mix(in srgb,var(--warn) 28%,transparent);transform:scale(calc(1 + var(--level) * .12))}
+#mic.wait svg{animation:mic-wait 1s ease-in-out infinite}
+@keyframes mic-wait{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){#mic,#mic.wait svg{transition:none;animation:none}#mic.on{transform:none}}
 /* 入れ替えを待っている新しい版。見逃さないよう、開いたときにいちばん上で伝える */
 #update{flex:none;display:flex;gap:8px;align-items:center;justify-content:space-between;margin:0 18px 8px;padding:6px 8px 6px 12px;border-radius:10px;background:var(--tint);font-size:12.5px}
 #update[hidden]{display:none}
@@ -120,7 +128,7 @@ main{padding-top:6px}
 <section id="shelf" aria-label="判断待ち" hidden><div id="shelf-title"></div><div id="cards"></div></section>
 <footer>
   <div id="chip" hidden><span id="chip-text"></span><button id="chip-clear" class="icon" aria-label="話題を外す">×</button></div>
-  <form id="f"><input id="text" aria-label="話す" placeholder="話しかける" autocomplete="off"><button id="send">送る</button></form>
+  <form id="f"><input id="text" aria-label="話す" placeholder="話しかける" autocomplete="off"><button id="mic" type="button" aria-label="声で話す" title="声で話す" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button id="send">送る</button></form>
 </footer>
 <svg id="t" viewBox="0 0 15 15" aria-hidden="true"><path class="fill" d="M0 -1H1L15.25 14.25H0Z"/><path class="line" d="M1 0 15.25 14.25H0"/></svg>
-</div><script src="markdown.js"></script><script src="panel.js"></script></body></html>
+</div><script src="markdown.js"></script><script src="speech.js"></script><script src="panel.js"></script></body></html>
