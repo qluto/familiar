@@ -70,7 +70,7 @@ extension Store {
         }
         let labels = ["working": "進んでいます", "waiting": "返事を待っています", "stalled": "止まっています", "done": "終わりました"]
         for (s, up) in changed {
-            try Thread(paths: paths).append("familiar", "「\(s.draft.title)」が\(labels[up.state] ?? "")。\(up.note)", about: s.id, now: now)
+            try Thread(paths: paths).append("familiar", "「\(s.draft.title)」が\(labels[up.state] ?? "")。\n\n\(up.note)", about: s.id, now: now)
             try Workspace(paths: paths).record("familiar が追跡（\(up.state)）", s, now: now)
         }
         return changed.map(\.0)
