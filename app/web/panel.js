@@ -315,7 +315,7 @@ event.listen("panel-open", async () => {
   opened = true;
   document.body.classList.toggle("notch", (await core.invoke("display")).mode === "notch");
   showUpdate(await core.invoke("update_ready"));
-  await core.invoke("fit_panel", { height: Math.min(640, screen.availHeight - 60) });
+  await core.invoke("fill_panel");
   try {
     const state = await reload();
     toEnd();

@@ -548,6 +548,33 @@ fn fit_panel(app: AppHandle, window: WebviewWindow, height: f64) -> Result<(), S
     win.set_focus().map_err(|e| e.to_string())
 }
 
+/// The conversation takes most of the screen the mascot is on: the full height below the menu bar (or the notch),
+/// and as wide as reads comfortably, without running past the screen's left edge.
+#[tauri::command]
+fn fill_panel(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    let main = app.get_webview_window("main").unwrap();
+    let scale = main.scale_factor().map_err(|e| e.to_string())?;
+    let Some(mon) = main.current_monitor().map_err(|e| e.to_string())?.or(main.primary_monitor().map_err(|e| e.to_string())?)
+        else { return fit_panel(app, window, 640.0) };
+    let (pos, size) = (mon.work_area().position.to_logical::<f64>(scale), mon.work_area().size.to_logical::<f64>(scale));
+    let screen_bottom = (mon.position().y as f64 + mon.size().height as f64) / scale;
+    let notch = (display_mode() == "notch").then(notch_rect).flatten();
+    let (top, bottom, room) = match notch {
+        Some(rect) => (rect.y + rect.height + 6.0, pos.y + size.height, size.width),
+        None => {
+            let right = main.outer_position().map_err(|e| e.to_string())?.to_logical::<f64>(scale).x + BUBBLE_OVERLAP;
+            (pos.y, screen_bottom, right - pos.x)
+        }
+    };
+    let height: f64 = (bottom - top - BUBBLE_GAP * 2.0).max(320.0);
+    let width = (size.width * 0.4).clamp(PANEL_WIDTH, 880.0).min(room - BUBBLE_GAP).max(PANEL_WIDTH.min(room));
+    let panel = LogicalSize::new(width, height);
+    window.set_size(panel).map_err(|e| e.to_string())?;
+    place(&main, &window, panel.to_physical(scale)).map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn hide_panel(app: AppHandle) -> Result<(), String> {
     app.get_webview_window("panel").unwrap().hide().map_err(|e| e.to_string())?;
@@ -570,7 +597,7 @@ fn main() {
             "quit" => app.exit(0),
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, cursor, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now])
+        .invoke_handler(tauri::generate_handler![log, qa_flags, character, pack_file, live, familiar, open_url, bubble, fit_bubble, show_panel, fit_panel, fill_panel, hide_panel, hotkey, first_run, hotkey_recording, set_hotkey, context_menu, cursor, show_settings, hide_settings, idle_seconds, display, set_display, notch, open_workspace, update::just_updated, update::update_ready, update::restart_now])
         .setup(|app| {
             let keys = read_config().ok().and_then(|c| c.get("hotkey")?.as_str().map(String::from))
                 .unwrap_or_else(|| DEFAULT_HOTKEY.into());

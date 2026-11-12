@@ -4,7 +4,7 @@
 <style>
 #b{height:100%}
 main{display:flex;flex-direction:column;gap:12px;flex:1 1 0}
-#shelf{flex:none;max-height:250px;overflow-y:auto;display:grid;gap:6px;padding:8px 18px;border-top:1.5px dashed var(--edge);background:var(--tint);scrollbar-width:thin}
+#shelf{flex:none;max-height:38%;overflow-y:auto;display:grid;gap:6px;padding:8px 18px;border-top:1.5px dashed var(--edge);background:var(--tint);scrollbar-width:thin}
 #shelf[hidden]{display:none}
 #shelf.reading{max-height:70%}
 #shelf-title{font-size:12px;font-weight:600;color:var(--sub)}
@@ -91,12 +91,31 @@ form{display:flex;gap:6px;align-items:center}
 #update[hidden]{display:none}
 #update button{font:inherit;font-size:12px;font-weight:600;border:1.5px solid var(--accent);background:var(--accent);color:var(--paper);border-radius:999px;padding:2px 11px;cursor:pointer;white-space:nowrap}
 input{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:6px 9px;flex:1;min-width:0}
+/* 会話は読みもの。字を大きく、行間と段落の間を広く取り、1 行を 40 字ほどに収める。判断待ちのカードは一覧なので詰めたまま */
+main{padding-top:6px}
+#thread{display:flex;flex-direction:column;gap:26px;width:100%;max-width:40em;margin:0 auto;font-size:15px;letter-spacing:.03em;padding-bottom:8px}
+#thread .line{line-height:1.9;max-width:100%}
+#thread .md{gap:.95em;line-height:1.9}
+#thread .md h4{margin:.8em 0 -.35em;font-size:15.5px;letter-spacing:.02em}
+#thread .md h4:first-child{margin-top:0}
+#thread .md ul{gap:.4em}
+#thread .md li{gap:.45em}
+#thread .md code{font-size:12.5px;letter-spacing:0;padding:1px 5px}
+#thread .md table{font-size:13px;letter-spacing:0}
+#thread .md blockquote{padding-left:14px}
+#thread .you{max-width:85%;font-size:14.5px;line-height:1.75;padding:9px 15px;border-radius:16px;margin:0}
+#thread .topic{gap:14px;padding:12px 16px;border-radius:14px}
+#thread .topic h3{font-size:12.5px}
+/* 見回りの記録は本文の邪魔をしない。続けて並ぶときは詰める */
+#thread details.scan,#thread .quiet{font-size:12px;letter-spacing:0;line-height:1.6;color:var(--sub);opacity:.85}
+#thread details.scan + details.scan{margin-top:-18px}
+#thread details.talked{font-size:12.5px;letter-spacing:0}
 </style></head>
 <body><div id="b">
 <header><span id="h">familiar</span><span><button id="settings" class="icon" aria-label="設定">⚙︎</button><button id="close" class="icon" aria-label="閉じる">×</button></span></header>
 <div id="update" role="status" hidden><span id="update-text"></span><button id="update-now">今すぐ入れ替える</button></div>
 <main id="m">
-  <div id="thread" role="log" style="display:flex;flex-direction:column;gap:12px"></div>
+  <div id="thread" role="log"></div>
 </main>
 <section id="shelf" aria-label="判断待ち" hidden><div id="shelf-title"></div><div id="cards"></div></section>
 <footer>
