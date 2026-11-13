@@ -55,6 +55,40 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     #expect(s.decide(now: at(2026, 10, 31, 10), state: ScheduleState(), calendar: tokyo()) == nil)  // 土曜
 }
 
+@Test func timesRunOnceAfterEachTimeEvenWhenMissed() throws {
+    var config = Config()
+    config.scanMode = "times"
+    config.times = ["8:00", "13:30", "25:00", "x"]
+    config.weekdays = [1, 2, 3, 4, 5, 6, 7]
+    let s = Schedule(config: config)
+    #expect(s.times == [8 * 60, 13 * 60 + 30])  // 読めない時刻は捨てる
+    var state = ScheduleState()
+    state.lastAttempt = at(2026, 10, 31, 20)  // 前の日の夜
+    let saturday = at(2026, 11, 1, 7, 55)
+    #expect(s.decide(now: saturday, state: state, calendar: tokyo()) == nil)
+    #expect(s.decide(now: at(2026, 11, 1, 8, 3), state: state, calendar: tokyo()) == .time)
+    state.lastAttempt = at(2026, 11, 1, 8, 3)
+    #expect(s.decide(now: at(2026, 11, 1, 12), state: state, calendar: tokyo()) == nil)
+    // 13:30 をスリープで逃しても、戻ったら 1 回だけ
+    #expect(s.decide(now: at(2026, 11, 1, 18), state: state, calendar: tokyo()) == .time)
+    state.lastAttempt = at(2026, 11, 1, 18)
+    #expect(s.decide(now: at(2026, 11, 1, 18, 5), state: state, calendar: tokyo()) == nil)
+    // 指定しない曜日は見回らない
+    config.weekdays = [2]
+    #expect(Schedule(config: config).decide(now: at(2026, 11, 1, 9), state: ScheduleState(), calendar: tokyo()) == nil)
+}
+
+@Test func meetingScansCanBeTurnedOff() throws {
+    var config = Config()
+    config.meetingScans = false
+    let s = Schedule(config: config), saturday = at(2026, 10, 31, 21)
+    var state = ScheduleState()
+    state.upcoming = [saturday.addingTimeInterval(10 * 60)]
+    state.ends = [saturday.addingTimeInterval(-15 * 60)]
+    #expect(s.decide(now: saturday, state: state, calendar: tokyo()) == nil)
+    #expect(Schedule().decide(now: saturday, state: state, calendar: tokyo()) == .meeting)
+}
+
 @Test func meetingTriggersOnceEvenOutsideHours() {
     let s = Schedule(), saturday = at(2026, 10, 31, 21)
     var state = ScheduleState()

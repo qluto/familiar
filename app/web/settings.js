@@ -123,7 +123,81 @@ ttsTry.onclick = async () => {
   catch (e) { voiceNote("tts", String(e), true); }
   ttsTry.disabled = false;
 };
+// 見回りの予定。決めるのは CLI（familiar tick）で、ここは config.json に書くだけ
+const DAYS = ["日", "月", "火", "水", "木", "金", "土"]; // Calendar の表記では 1 が日曜
+const scanForm = document.getElementById("scan"), scanNote = document.getElementById("scan-note");
+const timesInput = document.getElementById("scan-times"), every = document.getElementById("scan-every");
+const startHour = document.getElementById("scan-start"), endHour = document.getElementById("scan-end");
+const modeButtons2 = { times: document.getElementById("mode-times"), interval: document.getElementById("mode-interval") };
+const meetButtons = { on: document.getElementById("meet-on"), off: document.getElementById("meet-off") };
+const dayButtons = [2, 3, 4, 5, 6, 7, 1].map((day) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = DAYS[day - 1];
+  b.dataset.day = day;
+  b.onclick = () => { b.classList.toggle("selected"); saveSchedule(); };
+  document.getElementById("days").append(b);
+  return b;
+});
+const option = (value, label) => Object.assign(document.createElement("option"), { value, textContent: label });
+const clockText = (t) => t.replace(/^0(?=\d)/, ""); // 08:00 → 8:00
+const minutes = (n) => n % 60 ? `${n} 分ごと` : `${n / 60} 時間ごと`;
+for (let h = 0; h < 24; h++) startHour.append(option(h, `${h} 時`));
+for (let h = 1; h <= 24; h++) endHour.append(option(h, `${h} 時`));
+let schedule = null;
+
+function dayWords(days) {
+  const key = [...days].sort().join();
+  if (days.length === 7) return "毎日";
+  if (key === "2,3,4,5,6") return "平日";
+  if (key === "1,7") return "土日";
+  return [2, 3, 4, 5, 6, 7, 1].filter((d) => days.includes(d)).map((d) => DAYS[d - 1]).join("・") + "曜";
+}
+function scanSummary(s) {
+  const when = s.mode === "times"
+    ? `${dayWords(s.weekdays)}、${s.times.map(clockText).join("・")} に見回ります。スリープで逃したときは、戻ったときに 1 回見回ります`
+    : `${dayWords(s.weekdays)}の ${s.startHour} 時から ${s.endHour} 時まで、${minutes(s.intervalMinutes)}に見回ります`;
+  return `${when}。${s.meetingScans ? "人と会う予定の前と後にも見回ります" : "会議の前後には見回りません"}`;
+}
+function showSchedule(s, error) {
+  schedule = s;
+  for (const b of dayButtons) b.classList.toggle("selected", s.weekdays.includes(Number(b.dataset.day)));
+  for (const [mode, b] of Object.entries(modeButtons2)) b.classList.toggle("selected", mode === s.mode);
+  for (const node of scanForm.querySelectorAll("[data-mode]")) node.hidden = node.dataset.mode !== s.mode;
+  if (document.activeElement !== timesInput) timesInput.value = s.times.map(clockText).join(", ");
+  const steps = [15, 30, 60, 120, 180, 240, 360];
+  every.replaceChildren(...[...new Set([...steps, s.intervalMinutes])].sort((a, b) => a - b).map((n) => option(n, minutes(n))));
+  every.value = s.intervalMinutes;
+  startHour.value = s.startHour;
+  endHour.value = s.endHour;
+  meetButtons.on.classList.toggle("selected", s.meetingScans);
+  meetButtons.off.classList.toggle("selected", !s.meetingScans);
+  scanNote.textContent = error ?? scanSummary(s);
+  scanNote.classList.toggle("error", !!error);
+  fit();
+}
+async function saveSchedule(change = {}) {
+  const fields = {
+    mode: schedule.mode,
+    times: timesInput.value.split(/[,、\s]+/).filter(Boolean),
+    intervalMinutes: Number(every.value),
+    startHour: Number(startHour.value),
+    endHour: Number(endHour.value),
+    weekdays: dayButtons.filter((b) => b.classList.contains("selected")).map((b) => Number(b.dataset.day)),
+    meetingScans: schedule.meetingScans,
+    ...change,
+  };
+  try { showSchedule(JSON.parse(await core.invoke("set_schedule", { fields }))); }
+  catch (e) { showSchedule(schedule, String(e)); }
+}
+for (const [mode, b] of Object.entries(modeButtons2)) b.onclick = () => saveSchedule({ mode });
+for (const [on, b] of Object.entries(meetButtons)) b.onclick = () => saveSchedule({ meetingScans: on === "on" });
+scanForm.addEventListener("change", () => saveSchedule());
+scanForm.addEventListener("submit", (e) => { e.preventDefault(); timesInput.blur(); });
+const loadSchedule = () => core.invoke("familiar", { args: ["schedule"] }).then((out) => showSchedule(JSON.parse(out)))
+  .catch((e) => { scanNote.textContent = String(e); scanNote.classList.add("error"); });
+
 const fit = () => core.invoke("fit_panel", { height: document.querySelector("header").offsetHeight + main.scrollHeight + 4 });
 event.listen("hotkey-changed", ({ payload }) => { if (!recording) show(payload); });
-event.listen("settings-open", () => Promise.all([refresh(), core.invoke("display").then(showDisplay), core.invoke("voice_settings").then(showVoice)]).then(fit));
+event.listen("settings-open", () => Promise.all([refresh(), core.invoke("display").then(showDisplay), core.invoke("voice_settings").then(showVoice), loadSchedule()]).then(fit));
 event.listen("settings-closed", () => Speech.quiet());

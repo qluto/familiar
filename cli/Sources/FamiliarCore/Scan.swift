@@ -44,7 +44,7 @@ public struct Scanner {
         guard let trigger = schedule.decide(now: now, state: state) else { return nil }
         // 失敗しても次の間隔までは再試行しない。枠を食い続けないため
         state.lastAttempt = now
-        if let meeting = schedule.meeting(now: now, state: state) { state.triggered.append(meeting) }
+        if schedule.meetingScans, let meeting = schedule.meeting(now: now, state: state) { state.triggered.append(meeting) }
         state.triggered.removeAll { $0 < now }
         try state.save(to: paths.schedule)
         log("tick trigger=\(trigger.rawValue)", now: now)

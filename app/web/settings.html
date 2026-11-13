@@ -20,6 +20,11 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
 .fields input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
 .hint.error{color:var(--warn)}
 .keys button:disabled{opacity:.5;cursor:default}
+.fields select{font:inherit;font-size:13px;color:var(--ink);background:var(--tint);border:0;border-radius:8px;padding:4px 6px}
+.fields select:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.span{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sub)}
+#days button{padding:3px 8px;min-width:28px}
+[hidden]{display:none!important}
 .keys button.selected{background:var(--accent);border-color:var(--accent);color:var(--paper);font-weight:600}
 </style></head>
 <body><div id="b">
@@ -40,6 +45,18 @@ h3{margin:6px 0 8px;font-size:12px;color:var(--sub);font-weight:600}
       <span class="keys"><button id="character">キャラクター</button><button id="notch">ノッチ</button></span>
     </div>
     <p id="display-note" class="hint"></p>
+  </section>
+  <section aria-labelledby="h-scan">
+    <h3 id="h-scan">見回り</h3>
+    <div class="row"><span class="name">曜日</span><span class="keys" id="days" role="group" aria-label="見回る曜日"></span></div>
+    <div class="row"><span class="name">見回り方</span><span class="keys"><button id="mode-times" type="button">時刻</button><button id="mode-interval" type="button">間隔</button></span></div>
+    <form class="fields" id="scan" autocomplete="off">
+      <label for="scan-times" data-mode="times">時刻</label><input id="scan-times" data-mode="times" placeholder="8:00, 13:00">
+      <label for="scan-every" data-mode="interval">間隔</label><span class="span" data-mode="interval"><select id="scan-every"></select></span>
+      <label for="scan-start" data-mode="interval">時間帯</label><span class="span" data-mode="interval"><select id="scan-start"></select>〜<select id="scan-end" aria-label="終わり"></select></span>
+    </form>
+    <div class="row"><span class="name">会議の前後</span><span class="keys"><button id="meet-on" type="button">見回る</button><button id="meet-off" type="button">見回らない</button></span></div>
+    <p id="scan-note" class="hint" role="status"></p>
   </section>
   <section aria-labelledby="h-voice">
     <h3 id="h-voice">音声</h3>

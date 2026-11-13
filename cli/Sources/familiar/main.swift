@@ -6,6 +6,7 @@ usage: familiar <command>
   scan [--model MODEL]                     見回りを 1 回行う（既定: haiku → sonnet の 2 段。指定時は 1 段）
   tick                                     launchd 用。予定に合えば見回る
   status                                   最後の見回りと当日の使用量
+  schedule                                 見回りの予定を JSON で表示する（config.json の値と既定値）
   list [--all] [--json]                    提案の一覧（既定: 判断待ちのみ）
   show <id>                                提案の詳細
   accept <id> [--note 指示] [--approve] [--force]
@@ -93,6 +94,10 @@ func run() throws {
         } catch {
             FileHandle.standardError.write(Data("dream: \(error)\n".utf8))
         }
+    case "schedule":
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        print(String(decoding: try encoder.encode(Schedule(config: Config.load(paths))), as: UTF8.self))
     case "status":
         let state = ScheduleState.load(paths.schedule)
         let f = ISO8601DateFormatter()

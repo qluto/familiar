@@ -1,8 +1,13 @@
 import Foundation
 
-public struct Schedule {
-    public enum Trigger: String { case interval, meeting, afterMeeting = "after_meeting" }
+public struct Schedule: Encodable {
+    public enum Trigger: String { case interval, time, meeting, afterMeeting = "after_meeting" }
+    public enum Mode: String, Encodable { case interval, times }
 
+    public var mode = Mode.interval
+    /// 1 日の中の時刻（0 時からの分）。mode が times のとき、この時刻を過ぎたら 1 回見回る
+    public var times = [8 * 60]
+    public var meetingScans = true
     public var intervalMinutes = 30
     public var startHour = 9
     public var endHour = 20
@@ -20,6 +25,29 @@ public struct Schedule {
         weekdays = config?.weekdays.map(Set.init) ?? weekdays
         meetingLeadMinutes = config?.meetingLeadMinutes ?? meetingLeadMinutes
         afterMeetingMinutes = config?.afterMeetingMinutes ?? afterMeetingMinutes
+        mode = config?.scanMode.flatMap(Mode.init(rawValue:)) ?? mode
+        let parsed = (config?.times ?? []).compactMap(Self.minutes)
+        if !parsed.isEmpty { times = Array(Set(parsed)).sorted() }
+        meetingScans = config?.meetingScans ?? meetingScans
+    }
+
+    /// "8:00" や "08:00" を 0 時からの分にする。読めなければ nil
+    static func minutes(_ text: String) -> Int? {
+        let parts = text.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), (0..<24).contains(h), (0..<60).contains(m) else { return nil }
+        return h * 60 + m
+    }
+
+    enum CodingKeys: String, CodingKey { case mode, times, meetingScans, intervalMinutes, startHour, endHour, weekdays }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(times.map { String(format: "%02d:%02d", $0 / 60, $0 % 60) }, forKey: .times)
+        try c.encode(meetingScans, forKey: .meetingScans)
+        try c.encode(intervalMinutes, forKey: .intervalMinutes)
+        try c.encode(startHour, forKey: .startHour)
+        try c.encode(endHour, forKey: .endHour)
+        try c.encode(weekdays.sorted(), forKey: .weekdays)
     }
 
     func isWorkingTime(_ now: Date, calendar: Calendar) -> Bool {
@@ -30,13 +58,25 @@ public struct Schedule {
 
     /// 会議の前後のきっかけを優先する。作業時間外でも、人と会う予定の前後には見回る。
     public func decide(now: Date, state: ScheduleState, calendar: Calendar = .current) -> Trigger? {
-        let lead = TimeInterval(meetingLeadMinutes * 60)
-        if meeting(now: now, state: state, lead: lead) != nil { return .meeting }
-        if afterMeeting(now: now, state: state) { return .afterMeeting }
+        if meetingScans {
+            if meeting(now: now, state: state) != nil { return .meeting }
+            if afterMeeting(now: now, state: state) { return .afterMeeting }
+        }
+        if mode == .times { return timeIsDue(now: now, state: state, calendar: calendar) ? .time : nil }
         guard isWorkingTime(now, calendar: calendar) else { return nil }
         guard let last = state.lastAttempt else { return .interval }
         // launchd の起動は数秒ずれるので、1 tick 分遅れないよう少し余裕を見る
         return now.timeIntervalSince(last) >= TimeInterval(intervalMinutes * 60) - 30 ? .interval : nil
+    }
+
+    /// 今日の時刻のうち、過ぎた中で最も新しいものの後にまだ見回っていない。
+    /// スリープで時刻を逃しても、戻ったときに 1 回だけ見回る。いくつ逃しても 1 回にまとめる
+    func timeIsDue(now: Date, state: ScheduleState, calendar: Calendar) -> Bool {
+        guard let day = calendar.dateComponents([.weekday], from: now).weekday, weekdays.contains(day) else { return false }
+        let midnight = calendar.startOfDay(for: now)
+        let passed = times.compactMap { calendar.date(byAdding: .minute, value: $0, to: midnight) }.filter { $0 <= now }
+        guard let latest = passed.max() else { return false }
+        return (state.lastAttempt ?? .distantPast) < latest
     }
 
     public func meeting(now: Date, state: ScheduleState) -> Date? {

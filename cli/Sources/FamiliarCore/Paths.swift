@@ -47,6 +47,12 @@ public struct Config: Codable {
     public var weekdays: [Int]?
     public var meetingLeadMinutes: Int?
     public var afterMeetingMinutes: [Int]?
+    /// interval: 間隔で見回る / times: 決めた時刻に見回る
+    public var scanMode: String?
+    /// "HH:MM" の並び。scanMode が times のとき使う
+    public var times: [String]?
+    /// 人と会う予定の前後にも見回るか
+    public var meetingScans: Bool?
 
     public static func load(_ paths: Paths) -> Config? {
         (try? Data(contentsOf: paths.config)).flatMap { try? JSONDecoder().decode(Config.self, from: $0) }
