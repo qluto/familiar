@@ -155,6 +155,7 @@ public struct Conversation {
         if try onboarding() {
             parts.append(try String(contentsOf: paths.prompts.appendingPathComponent("BOOTSTRAP.md"), encoding: .utf8))
         }
+        parts.append(try String(contentsOf: paths.prompts.appendingPathComponent("manual.md"), encoding: .utf8))
         parts.append(workspace.context())
         // 取り下げたものも少しの間は見せ、頼まれたら戻せるようにする
         let reviewable = try store.load().filter { $0.status.isOpen || ($0.status == .dismissed && Date().timeIntervalSince($0.updatedAt) < 7 * 24 * 3600) }

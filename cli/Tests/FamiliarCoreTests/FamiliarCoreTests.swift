@@ -437,7 +437,7 @@ func chatTurn(_ files: [String: Any] = [:], suggestions: [[String: Any]] = [], d
 
 func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Paths) {
     let paths = try workspacePaths()
-    for name in ["chat.md", "BOOTSTRAP.md"] {
+    for name in ["chat.md", "BOOTSTRAP.md", "manual.md"] {
         try "ルール \(name)".write(to: paths.prompts.appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -518,6 +518,11 @@ func chatFixture(_ turn: [String: Any]?) throws -> (Conversation, Workspace, Pat
     #expect(workspace.entries(since: nil).contains { $0.contains("あなた: 来週の準備を見て") })
     try Thread(paths: paths).append("scan", "見回りました", run: "20261102-090000-ab12")
     #expect(try chat.prompt(words: "次", about: nil).contains("runs/20261102-090000-ab12.jsonl"))
+}
+
+@Test func theConversationKnowsHowFamiliarWorks() throws {
+    let (chat, _, _) = try chatFixture(chatTurn())
+    #expect(try chat.prompt(words: "見回りの頻度は変えられる？", about: nil).contains("ルール manual.md"))
 }
 
 @Test func talkingAboutARunIncludesItsLog() throws {
