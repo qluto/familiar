@@ -43,6 +43,25 @@ func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
     #expect(Live.load(paths.live).held == 0)
 }
 
+@Test func liveFromAnOlderVersionKeepsItsState() throws {
+    let paths = tempPaths()
+    try FileManager.default.createDirectory(at: paths.live.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try #"{"headline":"準備する","held":0,"lastAdded":1,"pending":1,"scanSeq":226,"scanning":false}"#.write(to: paths.live, atomically: true, encoding: .utf8)
+    let live = Live.load(paths.live)
+    #expect(live.pending == 1 && live.headline == "準備する" && live.scanSeq == 226 && live.lastAdded == 1 && live.asking == 0)
+}
+
+@Test func liveAskingCountsQuestionsAndPlansAwaitingReply() throws {
+    let paths = tempPaths(), store = Store(paths: paths)
+    let added = try store.merge([draft(), draft("別の件", url: "https://example.com/2")])
+    #expect(Live.load(paths.live).asking == 0)
+    try store.transition(added[0].id) { $0.question = "どのチーム？" }
+    try store.transition(added[1].id) { $0.plan = "issue を作ります" }
+    #expect(Live.load(paths.live).asking == 2)
+    try store.transition(added[0].id) { $0.status = .dismissed }
+    #expect(Live.load(paths.live).asking == 1)
+}
+
 @Test func tickRunsOnlyInWorkingHoursAtInterval() {
     let s = Schedule(), monday = at(2026, 11, 2, 10)
     var state = ScheduleState()

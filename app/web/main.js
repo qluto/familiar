@@ -26,33 +26,37 @@ function draw(v) {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-const NAMES = [...new Set([...Object.keys(Brain.GRAPH)])];
+const NAMES = Object.keys(Brain.GRAPH).filter((n) => !Brain.PHONE.includes(n)); // どのパックにもあるクリップ
 let blobs = {};
 let meta = {};
 const video = document.createElement("video");
 video.muted = true; video.playsInline = true; video.preload = "auto";
 // パックは全部同じ形式。id が null なら同梱のデフォルト、それ以外は利用者の手元のパック
+// スマホのクリップ（Brain.PHONE）は、全部揃っているときだけ読む
 async function readPack(id, names) {
   const read = id
     ? (name) => tauri.core.invoke("pack_file", { id, name })
     : async (name) => (await fetch(`packs/default/clips/${name}`)).arrayBuffer();
   const json = JSON.parse(new TextDecoder().decode(await read("clips.json")));
   const urls = {};
-  await Promise.all(names.map(async (n) => {
+  const load = (list) => Promise.all(list.map(async (n) => {
     urls[n] = URL.createObjectURL(new Blob([await read(`${n}.mp4`)], { type: "video/mp4" }));
   }));
-  return { json, urls };
+  await load(names);
+  let phone = names.length > 1 && Brain.PHONE.every((n) => json[n]);
+  if (phone) await load(Brain.PHONE).catch((e) => { phone = false; log(`phone clips failed: ${e}`); });
+  return { json, urls, phone };
 }
 async function loadPack(names) {
   const id = tauri ? await tauri.core.invoke("character") : null;
   try {
     const pack = await readPack(id, names);
-    meta = pack.json; blobs = pack.urls;
-    log("pack " + (id ?? "default"));
+    meta = pack.json; blobs = pack.urls; brain.phone = pack.phone;
+    log(`pack ${id ?? "default"} phone=${pack.phone}`);
   } catch (e) { // 壊れたパックでも起動できるようにする
     log(`pack ${id} failed: ${e}`);
     const pack = await readPack(null, names);
-    meta = pack.json; blobs = pack.urls;
+    meta = pack.json; blobs = pack.urls; brain.phone = pack.phone;
   }
 }
 function open(n) {
@@ -129,11 +133,12 @@ async function hold() {
   const [lo, hi] = Brain.HOLD[brain.hub];
   const until = now() + rnd(lo, hi);
   const blink = Brain.BLINK[brain.hub];
-  while (now() < until && !brain.pending) {
+  const waiting = () => now() < until && !brain.pending && !brain.cue;
+  while (waiting()) {
     const left = until - now();
     const step = blink ? rnd(2.2, 5.5) : left;
     await wait(Math.min(step, left));
-    if (blink && now() < until && !brain.pending && !unseen()) await play(blink);
+    if (blink && waiting() && !unseen()) await play(blink);
   }
 }
 async function life() {
@@ -195,7 +200,7 @@ function applyHotkey({ keys, active }) {
 // ── familiar の状態 ─────────────────
 const POLL_SECONDS = 2, HEADLINE = 30;
 const STALE_SCAN = 15 * 60; // 見回りが落ちて scanning が残っても考え続けないようにする
-let live = { scanning: false, pending: 0, held: 0, scanSeq: null, lastAdded: 0, lastError: null };
+let live = { scanning: false, pending: 0, held: 0, asking: 0, scanSeq: null, lastAdded: 0, lastError: null };
 let panelOpen = false, settingsOpen = false, lastBubble = null, lastNotch = null, reply = "", notchMode = false;
 let incoming = ""; // 入れ替えを待っている新しい版
 const covered = () => panelOpen || settingsOpen; // 大きな吹き出しのどちらかが開いている
@@ -245,16 +250,20 @@ function applyLive(next) {
   const started = next.scanStarted ? Date.parse(next.scanStarted) : 0;
   const scanning = !!next.scanning && Date.now() - started < STALE_SCAN * 1000;
   const finished = live.scanSeq !== null && next.scanSeq !== live.scanSeq;
-  const changed = scanning !== brain.scanning || next.pending !== live.pending || finished;
+  const asking = next.asking ?? 0;
+  const changed = scanning !== brain.scanning || next.pending !== live.pending || asking !== live.asking || finished;
   if (finished && next.lastAdded > 0) brain.discover();
-  live = { ...next, held: next.held ?? 0 };
-  brain.sync({ scanning, waiting: next.pending, panel: panelOpen });
+  live = { ...next, held: next.held ?? 0, asking };
+  brain.sync({ scanning, waiting: next.pending, asking });
   showBubble();
-  if (changed) { log(`live scanning=${scanning} pending=${next.pending} added=${finished ? next.lastAdded : "-"}`); interrupt(); }
+  if (changed) { log(`live scanning=${scanning} pending=${next.pending} asking=${asking} added=${finished ? next.lastAdded : "-"}`); interrupt(); }
+}
+async function readLive() {
+  try { applyLive(JSON.parse(await tauri.core.invoke("live"))); } catch (e) { log("live " + e); }
 }
 function openPanel() {
   panelOpen = true;
-  brain.sync({ scanning: brain.scanning, waiting: live.pending, panel: true });
+  brain.sync({ panel: true });
   showBubble();
   tauri?.core.invoke("show_panel");
 }
@@ -262,7 +271,7 @@ function startLive() {
   if (!tauri) return;
   const awaySeconds = QA.has("fastaway") ? 5 : Brain.AWAY; // 実機で離席を通す計測用
   const read = async () => {
-    try { applyLive(JSON.parse(await tauri.core.invoke("live"))); } catch (e) { log("live " + e); }
+    await readLive();
     const away = await tauri.core.invoke("idle_seconds") >= awaySeconds;
     if (brain.setAway(away) && brain.hub === "B") { brain.click(); interrupt(); } // 戻ったらすぐ振り向く
     else if (away && brain.hub === "F") interrupt();
@@ -271,10 +280,17 @@ function startLive() {
   setInterval(read, POLL_SECONDS * 1000);
   tauri.event.listen("panel-closed", () => {
     panelOpen = false;
-    brain.sync({ scanning: brain.scanning, waiting: live.pending, panel: false });
+    brain.sync({ panel: false });
     // 保留が残っていても右クリックできるよう、× や Esc で閉じたあとも応答を続ける
     touched = now();
     showBubble();
+    interrupt();
+  });
+  // 会話で送った言葉や採用を familiar が進めている間。終わったら、返事待ちになったかを先に読む
+  tauri.event.listen("busy", async ({ payload }) => {
+    if (!payload) await readLive();
+    log("busy " + payload);
+    brain.setBusy(payload);
     interrupt();
   });
 }

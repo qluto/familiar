@@ -18,6 +18,12 @@ const logs = new Map(); // 読み終えた見回りの記録。描き直して�
 const queue = []; // 返事を待つ言葉 { args, words, node }
 let talking = false;
 const working = new Set(); // 動いているカードの操作。提案の id か "proposal"
+// 言葉かカードの操作が動いている間は、キャラクターがスマホで進める姿を見せる
+let busy = false;
+function showBusy() {
+  const now = talking || working.size > 0;
+  if (now !== busy) { busy = now; event.emit("busy", now); }
+}
 const extras = []; // まだ記録にない行（送信待ち、考え中、失敗）。流れを描き直しても末尾に残す
 const STALE_MS = 11 * 60 * 1000; // 実行の上限を過ぎても進んでいなければ、止まったとみなす
 let topic = null; // 話題にしている提案か実行 { id, label }
@@ -162,11 +168,13 @@ async function run(args, shown, failed = showError) {
 async function act(args, key, label) {
   if (working.has(key)) return;
   working.add(key);
+  showBusy();
   draw(true);
   const wait = keep(waiting(label ? `「${label}」について考えています…` : "考えています…"));
   toEnd();
   await run(args, [wait]);
   working.delete(key);
+  showBusy();
   draw(true);
 }
 // 言葉は前の返事が届いてから送る。前の返事を踏まえて答え、流れも送った順に並ぶ
@@ -177,6 +185,7 @@ function enqueue(job) {
 async function talk() {
   if (talking) return;
   talking = true;
+  showBusy();
   while (queue.length) {
     const job = queue.shift();
     const wait = keep(waiting("考えています…"), job.node);
@@ -188,6 +197,7 @@ async function talk() {
     });
   }
   talking = false;
+  showBusy();
 }
 // 話題にしている提案なら、入力欄の言葉を判断に添える
 function taking(s) {

@@ -7,12 +7,14 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parents[1] / "web/packs/default/clips"
 W, H, FPS = 836, 1116, 12  # 絵は 12fps で描き、24fps の動画として書き出す
 
-BASE = dict(ex=0, ey=0, eyes=1, shut=0, bx=1, sy=1, tilt=0, dots=0, spark=0, nod=0)
+BASE = dict(ex=0, ey=0, eyes=1, shut=0, bx=1, sy=1, tilt=0, dots=0, spark=0, nod=0, phone=0, px=0, py=150, pr=0)
 F = dict(BASE)
 B = dict(BASE, eyes=0)
 T = dict(BASE, ey=-16, ex=-12, tilt=-6, dots=1)
 I = dict(BASE, ey=-8, sy=1.05, spark=1)
 Q = dict(BASE, ex=16, tilt=9, sy=.98)
+P = dict(BASE, ey=10, shut=.35, phone=1, py=0)  # スマホを両手で持ち、画面を見る
+R = dict(BASE, ex=14, tilt=9, sy=.98, phone=1, px=150, py=-50, pr=10)  # スマホを横に掲げ、問いかける
 
 
 def mix(a, b, k):
@@ -62,6 +64,15 @@ CLIPS = {
     "ask_wait": sway(Q, 2.2, tilt=12, ex=20),
     "ask_ok": path([(0, Q), (.35, dict(Q, nod=1)), (.7, dict(Q, nod=0)), (1, dict(Q, nod=1)), (1.7, F)]),
     "ask_out": path([(0, Q), (1, F)]),
+    "blink_r": blink(R),
+    "nod": path([(0, F), (.3, dict(F, nod=1)), (.6, F), (.8, F)]),
+    "phone_in": path([(0, F), (.9, P)]),
+    "phone_a": path([(0, P), (.4, dict(P, py=-6)), (.6, P), (1, dict(P, py=-6, ex=-6)), (1.2, P), (1.8, P)]),
+    "phone_out": path([(0, P), (.3, dict(P, nod=1)), (.5, P), (1.3, F)]),
+    "phone_ask": path([(0, P), (1, R)]),
+    "reply_wait": sway(R, 2.2, tilt=12, ex=18),
+    "reply_got": path([(0, R), (.35, dict(R, nod=1)), (.6, R), (1.4, P)]),
+    "reply_out": path([(0, R), (1.2, F)]),
 }
 
 SPARK = "M0 -46C5 -14 14 -5 46 0C14 5 5 14 0 46C-5 14 -14 5 -46 0C-14 -5 -5 -14 0 -46Z"
@@ -79,6 +90,8 @@ def svg(p):
 <g transform="translate({CX} {CY}) rotate({p["tilt"]:.2f}) scale({p["bx"]:.3f} {p["sy"] - .05 * p["nod"]:.3f})">
 <rect x="{-SIZE / 2}" y="{-SIZE / 2}" width="{SIZE}" height="{SIZE}" rx="72" fill="url(#g)"/>
 <g opacity="{p["eyes"]:.2f}" transform="translate(0 {12 * p["nod"]:.1f})">{eyes}</g>{dots}{spark}
+<g opacity="{min(1, p["phone"] * 1.5):.2f}" transform="translate({p["px"]:.1f} {92 + p["py"]:.1f}) rotate({p["pr"]:.2f})">
+<rect x="-32" y="-50" width="64" height="100" rx="14" fill="#2f4229" stroke="#fffdf7" stroke-width="6"/><circle cx="-14" cy="-32" r="6" fill="#8fb27f"/></g>
 </g></svg>'''
 
 

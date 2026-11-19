@@ -49,6 +49,7 @@ public struct Store {
             live.pending = items.filter { $0.status == .new }.count
             live.headline = items.first { $0.status == .new }?.draft.title
             live.held = items.filter { $0.status == .snoozed || $0.status == .accepting }.count
+            live.asking = items.filter { $0.status == .new && ($0.question != nil || $0.plan != nil) }.count
             try live.save(to: paths.live)
             return result
         }
